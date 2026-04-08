@@ -1,5 +1,5 @@
 import { enqueueAction, getQueuedActions, removeQueuedAction } from './offlineQueue'
-import { markIn, markOut } from './teamService'
+import { markIn, markOut, markAttendance } from './teamService'
 
 export async function performOut({ teamId, membersOut, actorUid }) {
   if (!navigator.onLine) {
@@ -21,6 +21,16 @@ export async function performIn({ teamId, actorUid }) {
   return { queued: false, ...result }
 }
 
+export async function performAttendance({ teamId, actorUid }) {
+  if (!navigator.onLine) {
+    await enqueueAction({ type: 'ATTENDANCE', teamId, actorUid })
+    return { queued: true }
+  }
+
+  await markAttendance(teamId, actorUid)
+  return { queued: false }
+}
+
 export async function syncOfflineQueue() {
   if (!navigator.onLine) return { synced: 0 }
 
@@ -34,6 +44,9 @@ export async function syncOfflineQueue() {
       }
       if (action.type === 'IN') {
         await markIn(action.teamId, action.actorUid)
+      }
+      if (action.type === 'ATTENDANCE') {
+        await markAttendance(action.teamId, action.actorUid)
       }
       await removeQueuedAction(action.id)
       synced += 1

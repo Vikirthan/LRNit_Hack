@@ -80,35 +80,46 @@ export default function AdminPage() {
 
   const onBulkMail = async () => {
     if (!window.confirm(`Send QR emails to all ${teams.length} teams now?`)) return
-    setStatus(`Preparing to mail ${teams.length} teams...`)
+    
     let success = 0
     let fail = 0
-    
+    setStatus(`🚀 Starting bulk mailing for ${teams.length} teams...`)
+
     for (const t of teams) {
       try {
-        // If team is missing token, generate it first
+        // Validation: Must have emails
+        if (!t.email_count || t.email_count === 0) {
+           throw new Error("No emails linked to this team. Please re-import with emails.")
+        }
+
+        // Validation: Must have token
         if (!t.qr_token) {
-          setStatus(`Generating token for ${t.team_id}...`)
+          setStatus(`🛠️ Generating missing token for ${t.team_id}...`)
           const res = await generateTeamQrToken(t.team_id)
-          t.qr_token = res.token // Update local ref for subsequent send
+          t.qr_token = res.token
         }
         
+        setStatus(`📧 Sending QR to ${t.team_id} (${t.team_name})...`)
         const res = await sendQrEmails(t.team_id)
+        
         if (res?.success === false) {
-           throw new Error(res.error || 'Server error')
+           throw new Error(res.error || 'Server rejected request')
         }
+
         success++
-        setStatus(`Mailing: ${success} sent, ${fail} failed...`)
+        setStatus(`✅ Sent ${success}/${teams.length}... (${t.team_id})`)
       } catch (err) {
-        console.error(`Failed team ${t.team_id}:`, err)
+        console.error(`BulkMail error for ${t.team_id}:`, err)
         fail++
-        setStatus(`⚠️ Failed mailing ${t.team_id}: ${err.message || err.error_description || 'Unknown error'}`)
-        // Let user see the error for a moment before continuing
-        await new Promise(r => setTimeout(r, 1500))
+        const errMsg = err.message || 'Unknown error'
+        setStatus(`⚠️ FAILED ${t.team_id}: ${errMsg}`)
+        // Pause briefly so user can see what failed
+        await new Promise(r => setTimeout(r, 2000))
       }
     }
-    setStatus(`✅ Bulk mailing complete: ${success} sent, ${fail} failed.`)
-    refresh() // Refresh to save tokens to UI state
+    
+    setStatus(`🏁 Mailing Finished. Success: ${success}, Failed: ${fail}.`)
+    refresh()
   }
 
   const onGenerateAllTokens = async () => {
@@ -377,9 +388,37 @@ export default function AdminPage() {
                 </div>
               </div>
               <div style={{ marginTop: '24px' }}>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>Required Columns:</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>Required Columns (in order):</p>
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', marginTop: '8px', fontFamily: 'monospace', color: '#93c5fd', fontSize: '0.8rem' }}>
-                  team_id, team_name, room_number, emails
+                  team_id, team_name, members_count, room_number, emails
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                  <button 
+                    className="login-tab" 
+                    style={{ flex: 1, fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)' }}
+                    onClick={() => {
+                      const csv = "team_id,team_name,members_count,room_number,emails\nH-101,Example Team,4,Room 101,lead@example.com;member@example.com"
+                      const blob = new Blob([csv], { type: 'text/csv' })
+                      saveAs(blob, "TicketScan_Template.csv")
+                    }}
+                  >
+                    CSV Template
+                  </button>
+                  <button 
+                    className="login-tab" 
+                    style={{ flex: 1, fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)' }}
+                    onClick={() => {
+                      const data = [{ team_id: 'H-101', team_name: 'Example Team', members_count: 4, room_number: 'Room 101', emails: 'lead@example.com;member@example.com' }]
+                      const ws = XLSX.utils.json_to_sheet(data)
+                      const wb = XLSX.utils.book_new()
+                      XLSX.utils.book_append_sheet(wb, ws, "Teams")
+                      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+                      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+                      saveAs(blob, "TicketScan_Template.xlsx")
+                    }}
+                  >
+                    XLSX Template
+                  </button>
                 </div>
                 <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%' }} onClick={onGenerateAllTokens}>🛠️ Generate/Repair ALL Tokens</button>
                 <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
@@ -405,16 +444,36 @@ export default function AdminPage() {
                         <td style={{ padding: '16px', color: '#60a5fa', fontWeight: 800 }}>{t.team_id}</td>
                         <td style={{ padding: '16px', color: '#fff' }}><strong>{t.team_name}</strong></td>
                         <td style={{ padding: '16px' }}>
-                           <span style={{ 
-                             padding: '4px 10px', 
-                             borderRadius: '8px', 
-                             fontSize: '0.75rem', 
-                             background: t.active_out ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                             color: t.active_out ? '#ef4444' : '#10b981',
-                             fontWeight: 700
-                           }}>
-                             {t.active_out ? 'ON BREAK' : 'IN VENUE'}
-                           </span>
+                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                             <span style={{ 
+                               padding: '4px 10px', 
+                               borderRadius: '8px', 
+                               fontSize: '0.75rem', 
+                               background: t.active_out ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                               color: t.active_out ? '#ef4444' : '#10b981',
+                               fontWeight: 700
+                             }}>
+                               {t.active_out ? 'ON BREAK' : 'IN VENUE'}
+                             </span>
+                             <span style={{ 
+                               padding: '4px 10px', 
+                               borderRadius: '8px', 
+                               fontSize: '0.75rem', 
+                               background: t.is_present ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                               color: t.is_present ? '#4ade80' : 'rgba(255,255,255,0.4)',
+                               fontWeight: 700
+                             }}>
+                               {t.is_present ? 'PRESENT' : 'ABSENT'}
+                             </span>
+                             {t.qr_token ? (
+                               <span title="Token Generated" style={{ color: '#34d399', fontSize: '0.9rem' }}>🔑</span>
+                             ) : (
+                               <span title="No Token" style={{ color: '#f87171', fontSize: '0.9rem' }}>🚫</span>
+                             )}
+                             <span title={`${t.email_count || 0} emails found`} style={{ color: (t.email_count || 0) > 0 ? '#60a5fa' : 'rgba(255,255,255,0.2)', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                               {t.email_count || 0} 📧
+                             </span>
+                           </div>
                         </td>
                       </tr>
                     ))}
@@ -437,9 +496,13 @@ export default function AdminPage() {
                 <thead>
                   <tr>
                     <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>Team</th>
-                    {[...new Set(teacherScores.map(s => s.teacher_name))].map(name => (
-                      <th key={name} style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>{name}</th>
-                    ))}
+                    {[...new Set(teacherScores.map(s => s.teacher_name))].length > 0 ? (
+                      [...new Set(teacherScores.map(s => s.teacher_name))].map(name => (
+                        <th key={name} style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>{name}</th>
+                      ))
+                    ) : (
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>Jury Scores</th>
+                    )}
                     <th style={{ background: 'rgba(255,255,255,0.08)', color: '#60a5fa', textAlign: 'right', padding: '18px' }}>Avg Score</th>
                     <th style={{ background: 'rgba(255,255,255,0.05)', color: '#ef4444', textAlign: 'right', padding: '18px' }}>Penalty</th>
                     <th style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#fff', textAlign: 'right', padding: '18px' }}>FINAL</th>

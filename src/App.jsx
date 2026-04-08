@@ -8,6 +8,7 @@ import NotFoundPage from './pages/NotFoundPage'
 import TeacherPage from './pages/TeacherPage'
 import VolunteerPage from './pages/VolunteerPage'
 import TeamPage from './pages/TeamPage'
+import PublicTicketPage from './pages/PublicTicketPage'
 
 function HomeRedirect() {
   const { profile } = useAuth()
@@ -23,6 +24,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/scan" element={<PublicTicketPage />} />
       <Route
         path="/admin"
         element={

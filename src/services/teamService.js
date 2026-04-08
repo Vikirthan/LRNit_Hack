@@ -241,6 +241,35 @@ export async function markIn(teamId, actorUid) {
   return { durationMin: data?.duration_min ?? 0, penalty: data?.penalty ?? 0 }
 }
 
+export async function markAttendance(teamId, actorUid) {
+  if (!supabase) {
+    const teams = readLocalTeams()
+    const idx = teams.findIndex(t => t.team_id === teamId)
+    if (idx >= 0) {
+      teams[idx].is_present = true
+      writeLocalTeams(teams)
+    }
+    return { success: true }
+  }
+
+  const { error } = await supabase
+    .from('teams')
+    .update({ is_present: true, updated_at: new Date().toISOString() })
+    .eq('team_id', teamId)
+
+  if (error) throw error
+  
+  // Log the attendance
+  await supabase.from('scan_logs').insert({
+    team_id: teamId,
+    action_type: 'ATTENDANCE',
+    payload: { is_present: true },
+    actor_id: actorUid ?? null
+  })
+
+  return { success: true }
+}
+
 export async function getActiveOutTeams() {
   if (!supabase) return []
 
@@ -261,11 +290,20 @@ export async function getTeams() {
   if (!supabase) return readLocalTeams()
 
   try {
-    const { data, error } = await supabase.from('teams').select('*').order('team_name', { ascending: true })
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*, team_emails(email)')
+      .order('team_name', { ascending: true })
     if (error) throw error
-    if (data && data.length > 0) {
-      writeLocalTeams(data)
-      return data
+    if (data) {
+      // Map to flatten emails for easier UI use if needed
+      const mapped = data.map(t => ({
+        ...t,
+        email_count: t.team_emails?.length || 0,
+        leader_email: t.team_emails?.[0]?.email || null
+      }))
+      writeLocalTeams(mapped)
+      return mapped
     }
   } catch (error) {
     console.warn('Falling back to local team cache:', error.message)

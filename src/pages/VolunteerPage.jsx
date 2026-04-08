@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import QrScanner from '../components/QrScanner'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
-import { performIn, performOut, syncOfflineQueue } from '../services/scanService'
+import { performIn, performOut, performAttendance, syncOfflineQueue } from '../services/scanService'
 import { getTeams, searchTeamsByName, verifyScanToken } from '../services/teamService'
 
 export default function VolunteerPage() {
@@ -50,8 +50,17 @@ export default function VolunteerPage() {
       return
     }
 
-    const maxAllowed = Math.max(1, (Number(team.members_count) || 2) - 1)
-    const raw = window.prompt(`Team of ${team.members_count}. Max ${maxAllowed} members can leave. How many are going out?`, '1')
+    // Dynamic requirement: Max 3 out total.
+    // If team of 4 -> 2 max
+    // If team of 3 -> 1 max
+    // If team of 2 -> 1 max (assumed minimum)
+    let maxAllowed = 3
+    if (team.members_count === 4) maxAllowed = 2
+    else if (team.members_count === 3) maxAllowed = 1
+    else if (team.members_count === 2) maxAllowed = 1
+    else if (team.members_count < 2) maxAllowed = 0
+    
+    const raw = window.prompt(`Team of ${team.members_count}. Allowed max ${maxAllowed} members to leave. How many are going out?`, '1')
     if (raw === null) return // Cancelled
     
     const membersOut = Number(raw)
@@ -93,6 +102,17 @@ export default function VolunteerPage() {
       // Update local state
       setTeam({ ...team, active_out: null })
       setMessage(result.queued ? 'IN queued (offline)' : `✅ IN marked. Penalty: ${result.penalty || 0} pts`)
+    } catch (err) {
+      setMessage(`❌ Error: ${err.message}`)
+    }
+  }
+
+  const onAttendance = async () => {
+    if (!team) return
+    try {
+      const result = await performAttendance({ teamId: team.team_id, actorUid: user?.uid })
+      setTeam({ ...team, is_present: true })
+      setMessage(result.queued ? 'Attendance queued (offline)' : '✅ Team marked as PRESENT')
     } catch (err) {
       setMessage(`❌ Error: ${err.message}`)
     }
@@ -140,6 +160,33 @@ export default function VolunteerPage() {
 
           <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '28px', padding: '24px' }}>
             <h2 style={{ color: '#fff', fontSize: '1.4rem', marginBottom: '16px' }}>Team Details</h2>
+
+            {team && !team.is_present && (
+              <div 
+                style={{ 
+                  background: 'rgba(245, 158, 11, 0.1)', 
+                  border: '1px solid rgba(245, 158, 11, 0.2)', 
+                  borderRadius: '16px', 
+                  padding: '16px', 
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <h4 style={{ color: '#fbbf24', margin: 0 }}>Attendance Needed</h4>
+                  <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>Team has not checked in yet</p>
+                </div>
+                <button 
+                  onClick={onAttendance}
+                  className="login-tab active"
+                  style={{ background: '#f59e0b', color: '#000', fontWeight: 'bold' }}
+                >
+                  Mark Present
+                </button>
+              </div>
+            )}
             
             <div className="login-feature-cards" style={{ marginBottom: '20px' }}>
               <div className="login-feature-card">
