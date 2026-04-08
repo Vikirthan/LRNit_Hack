@@ -105,6 +105,27 @@ export default function AdminPage() {
     refresh() // Refresh to save tokens to UI state
   }
 
+  const onGenerateAllTokens = async () => {
+    if (!window.confirm(`Generate/Repair tokens for all ${teams.length} teams?`)) return
+    setStatus(`Generating tokens for ${teams.length} teams...`)
+    let success = 0
+    let fail = 0
+    
+    for (const t of teams) {
+      try {
+        const res = await generateTeamQrToken(t.team_id)
+        if (res.token) {
+          success++
+          setStatus(`Generated: ${success} teams...`)
+        }
+      } catch (err) {
+        fail++
+      }
+    }
+    setStatus(`✅ Token generation complete: ${success} successful, ${fail} failed.`)
+    refresh()
+  }
+
   const handleApprove = async (id) => {
     try {
       await approveAccount(id)
@@ -354,7 +375,8 @@ export default function AdminPage() {
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', marginTop: '8px', fontFamily: 'monospace', color: '#93c5fd', fontSize: '0.8rem' }}>
                   team_id, team_name, room_number, emails
                 </div>
-                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
+                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%' }} onClick={onGenerateAllTokens}>🛠️ Generate/Repair ALL Tokens</button>
+                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
                 <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)' }} onClick={exportToExcel}>📥 Export Master Excel (with QRs)</button>
                 <button className="login-submit" style={{ marginTop: '12px', width: '100%' }} onClick={() => refresh()}>Force Sync Display</button>
               </div>
