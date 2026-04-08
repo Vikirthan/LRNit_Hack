@@ -10,7 +10,8 @@ import {
   saveRules as updateRules,
   verifyTeamsInBackend,
   sendQrEmails,
-  getActivityLog
+  getActivityLog,
+  generateTeamQrToken
 } from '../services/teamService'
 import { parseTeamFile } from '../services/csvService'
 import * as XLSX from 'xlsx'
@@ -85,14 +86,23 @@ export default function AdminPage() {
     
     for (const t of teams) {
       try {
+        // If team is missing token, generate it first
+        if (!t.qr_token) {
+          setStatus(`Generating token for ${t.team_id}...`)
+          const res = await generateTeamQrToken(t.team_id)
+          t.qr_token = res.token // Update local ref for subsequent send
+        }
+        
         await sendQrEmails(t.team_id)
         success++
         setStatus(`Mailing: ${success} sent, ${fail} failed...`)
       } catch (err) {
+        console.error(`Failed team ${t.team_id}:`, err)
         fail++
       }
     }
     setStatus(`✅ Bulk mailing complete: ${success} sent, ${fail} failed.`)
+    refresh() // Refresh to save tokens to UI state
   }
 
   const handleApprove = async (id) => {

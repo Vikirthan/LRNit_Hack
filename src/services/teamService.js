@@ -1,5 +1,6 @@
 import { hasSupabaseConfig, supabase } from '../config/supabase'
 import { generateTeamQrToken, sendOverdueAlert, sendTeamQrEmail } from './supabaseFunctions'
+export { generateTeamQrToken }
 
 const LOCAL_TEAMS_KEY = 'ticketscan-local-teams'
 
