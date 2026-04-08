@@ -13,6 +13,8 @@ import {
   getActivityLog
 } from '../services/teamService'
 import { parseTeamFile } from '../services/csvService'
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
 import { getPendingAccounts, getAllAccounts, approveAccount, rejectAccount, deleteAccount } from '../services/accountService'
 import TeamTimer from '../components/TeamTimer'
 
@@ -75,6 +77,24 @@ export default function AdminPage() {
     }
   }
 
+  const onBulkMail = async () => {
+    if (!window.confirm(`Send QR emails to all ${teams.length} teams now?`)) return
+    setStatus(`Preparing to mail ${teams.length} teams...`)
+    let success = 0
+    let fail = 0
+    
+    for (const t of teams) {
+      try {
+        await sendQrEmails(t.team_id)
+        success++
+        setStatus(`Mailing: ${success} sent, ${fail} failed...`)
+      } catch (err) {
+        fail++
+      }
+    }
+    setStatus(`✅ Bulk mailing complete: ${success} sent, ${fail} failed.`)
+  }
+
   const handleApprove = async (id) => {
     try {
       await approveAccount(id)
@@ -104,6 +124,78 @@ export default function AdminPage() {
     } catch (err) {
       setStatus(`Error: ${err.message}`)
     }
+  }
+
+  const exportToExcel = () => {
+    const data = teams.map(t => ({
+      'Team ID': t.team_id,
+      'Team Name': t.team_name,
+      'Room': t.room_number || 'N/A',
+      'Penalty Points': t.penalty_points || 0,
+      'Status': t.active_out ? 'ON BREAK' : 'IN VENUE',
+      'QR Link': `${window.location.origin}/scan?token=${t.qr_token || 'TOKEN_PENDING'}`
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Master Teams')
+    
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+    const fileData = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' })
+    saveAs(fileData, `TicketScan_MasterTeams_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
+  const exportScoresToExcel = () => {
+    // Pivot data for export
+    const teamMap = new Map()
+    teams.forEach(t => teamMap.set(t.team_id, { 
+      name: t.team_name, 
+      id: t.team_id, 
+      penalty: t.penalty_points || 0,
+      scores: {} 
+    }))
+
+    const juryNames = [...new Set(teacherScores.map(s => s.teacher_name))].sort()
+    
+    teacherScores.forEach(s => {
+      const entry = teamMap.get(s.team_id)
+      if (entry) {
+        entry.scores[s.teacher_name] = s.total
+      }
+    })
+
+    const exportData = Array.from(teamMap.values()).map(entry => {
+      const row = {
+        'Team ID': entry.id,
+        'Team Name': entry.name
+      }
+      
+      let sum = 0
+      let count = 0
+      
+      juryNames.forEach(name => {
+        const s = entry.scores[name] ?? '-'
+        row[`Jury: ${name}`] = s
+        if (typeof s === 'number') {
+          sum += s
+          count++
+        }
+      })
+
+      row['Avg Score'] = count > 0 ? (sum / count).toFixed(2) : 0
+      row['Penalty'] = entry.penalty
+      row['Final Score'] = (count > 0 ? (sum / count) : 0) - entry.penalty
+      
+      return row
+    })
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Detailed Scores')
+    
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+    const fileData = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' })
+    saveAs(fileData, `TicketScan_DetailedScores_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
   const activeOut = teams.filter(t => t.active_out)
@@ -252,7 +344,9 @@ export default function AdminPage() {
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', marginTop: '8px', fontFamily: 'monospace', color: '#93c5fd', fontSize: '0.8rem' }}>
                   team_id, team_name, room_number, emails
                 </div>
-                <button className="login-submit" style={{ marginTop: '32px', width: '100%' }} onClick={() => refresh()}>Force Sync Display</button>
+                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
+                <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)' }} onClick={exportToExcel}>📥 Export Master Excel (with QRs)</button>
+                <button className="login-submit" style={{ marginTop: '12px', width: '100%' }} onClick={() => refresh()}>Force Sync Display</button>
               </div>
             </div>
 
@@ -295,29 +389,64 @@ export default function AdminPage() {
 
         {activeTab === 'judge' && (
           <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
-            <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>Panel Evaluations ({teacherScores.length})</h2>
-            <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <table className="sheet-table">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px', alignItems: 'center' }}>
+              <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700 }}>Scoring Mastery Matrix</h2>
+              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 250, 0.2)', color: '#60a5fa' }}>📥 Download Detailed Sheet</button>
+            </div>
+            
+            <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
+              <table className="sheet-table" style={{ minWidth: '1000px' }}>
                 <thead>
                   <tr>
                     <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>Team</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>Evaluator</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'right', padding: '18px' }}>Total Score</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>Notes</th>
+                    {[...new Set(teacherScores.map(s => s.teacher_name))].map(name => (
+                      <th key={name} style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>{name}</th>
+                    ))}
+                    <th style={{ background: 'rgba(255,255,255,0.08)', color: '#60a5fa', textAlign: 'right', padding: '18px' }}>Avg Score</th>
+                    <th style={{ background: 'rgba(255,255,255,0.05)', color: '#ef4444', textAlign: 'right', padding: '18px' }}>Penalty</th>
+                    <th style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#fff', textAlign: 'right', padding: '18px' }}>FINAL</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {teacherScores.map((s) => (
-                    <tr key={s.id} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <td style={{ padding: '18px', color: '#fff' }}><strong>{s.team?.team_name}</strong> <span style={{ color: '#60a5fa', fontSize: '0.8rem' }}>{s.team_id}</span></td>
-                      <td style={{ padding: '18px', color: 'rgba(255,255,255,0.8)' }}>{s.teacher_name}</td>
-                      <td style={{ padding: '18px', color: '#34d399', textAlign: 'right', fontWeight: 800, fontSize: '1.10rem' }}>{s.total_score}</td>
-                      <td style={{ padding: '18px', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>{s.remarks || '-'}</td>
-                    </tr>
-                  ))}
-                  {teacherScores.length === 0 && (
-                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '60px', color: 'rgba(255,255,255,0.2)' }}>No evaluations submitted yet</td></tr>
-                  )}
+                  {teams.map((t) => {
+                    const teamScores = teacherScores.filter(s => s.team_id === t.team_id)
+                    const juryNames = [...new Set(teacherScores.map(s => s.teacher_name))]
+                    
+                    let sum = 0
+                    let count = 0
+                    
+                    return (
+                      <tr key={t.team_id} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td style={{ padding: '18px', color: '#fff' }}>
+                          <strong>{t.team_name}</strong>
+                          <span style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>{t.team_id}</span>
+                        </td>
+                        
+                        {juryNames.map(name => {
+                          const s = teamScores.find(sc => sc.teacher_name === name)
+                          if (s) {
+                            sum += s.total
+                            count++
+                          }
+                          return (
+                            <td key={name} style={{ textAlign: 'center', color: s ? '#fff' : 'rgba(255,255,255,0.1)' }}>
+                              {s ? s.total : '-'}
+                            </td>
+                          )
+                        })}
+                        
+                        <td style={{ padding: '18px', color: '#60a5fa', textAlign: 'right', fontWeight: 800 }}>
+                          {count > 0 ? (sum / count).toFixed(1) : '0.0'}
+                        </td>
+                        <td style={{ padding: '18px', color: '#ef4444', textAlign: 'right', fontWeight: 600 }}>
+                          -{t.penalty_points || 0}
+                        </td>
+                        <td style={{ padding: '18px', color: '#34d399', textAlign: 'right', fontWeight: 900, fontSize: '1.2rem' }}>
+                          {((count > 0 ? (sum / count) : 0) - (t.penalty_points || 0)).toFixed(1)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -348,15 +477,15 @@ export default function AdminPage() {
                           padding: '4px 10px', 
                           borderRadius: '8px', 
                           fontSize: '0.75rem', 
-                          background: acc.is_approved ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                          color: acc.is_approved ? '#10b981' : '#f87171',
+                          background: (acc.is_approved || acc.approved) ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                          color: (acc.is_approved || acc.approved) ? '#10b981' : '#f87171',
                           fontWeight: 700
                         }}>
-                          {acc.is_approved ? 'ACTIVE' : 'PENDING'}
+                          {(acc.is_approved || acc.approved) ? 'ACTIVE' : 'PENDING'}
                         </span>
                       </td>
                       <td style={{ padding: '18px', textAlign: 'right' }}>
-                        {!acc.is_approved && (
+                        {!(acc.is_approved || acc.approved) && (
                           <button onClick={() => handleApprove(acc.id)} className="login-tab active" style={{ padding: '6px 14px', fontSize: '0.8rem', marginRight: '8px' }}>Approve</button>
                         )}
                         <button onClick={() => handleDelete(acc.id)} className="login-tab" style={{ padding: '6px 14px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>Revoke</button>

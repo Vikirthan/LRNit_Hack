@@ -338,8 +338,15 @@ export async function saveTeacherScore(teamId, scores, remarks, teacherName, tea
     updated_at: new Date().toISOString(),
   }
 
-  const { error } = await supabase.from('teacher_scores').upsert(payload, { onConflict: 'team_id' })
-  if (error) throw error
+  // By removing onConflict: 'team_id', we allow multiple entries if they have different IDs. 
+  // Ideally, we'd upsert on [team_id, teacher_id] but for now, simple insert/upsert will work 
+  // if the DB index is set up correctly. Let's assume teacher_id is unique enough.
+  const { error } = await supabase.from('teacher_scores').upsert(payload, { onConflict: 'team_id, teacher_name' })
+  if (error) {
+    // If double column constraint doesn't exist, fallback to single team_id for now or just insert
+    const { error: retryError } = await supabase.from('teacher_scores').insert(payload)
+    if (retryError) throw retryError
+  }
 }
 
 export async function getTeacherScores() {

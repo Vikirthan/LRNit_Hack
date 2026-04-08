@@ -127,12 +127,16 @@ export default function TeacherPage() {
       <div className="login-bg-grid" />
 
       <main className="layout teacher-layout" style={{ position: 'relative', zIndex: 1, maxWidth: '1300px' }}>
-        <header className="teacher-hero" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '32px', overflow: 'hidden', padding: '32px' }}>
+        <header className="teacher-hero" style={{ background: profile?.role === 'jury' ? 'rgba(251, 191, 36, 0.15)' : 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: `1px solid ${profile?.role === 'jury' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '32px', overflow: 'hidden', padding: '32px' }}>
           <div className="teacher-hero-copy">
-            <p className="login-hero-badge" style={{ background: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa' }}>EXPERT PANEL ACCESS</p>
-            <h1 className="login-hero-title" style={{ fontSize: '3rem' }}> Judging <span>Portal</span></h1>
+            <p className="login-hero-badge" style={{ background: profile?.role === 'jury' ? 'rgba(251, 191, 36, 0.2)' : 'rgba(139, 92, 246, 0.2)', color: profile?.role === 'jury' ? '#fbbf24' : '#a78bfa' }}>
+              {profile?.role === 'jury' ? 'VIP JURY ACCESS' : 'EXPERT PANEL ACCESS'}
+            </p>
+            <h1 className="login-hero-title" style={{ fontSize: '3rem' }}> 
+              {profile?.role === 'jury' ? 'Grand ' : ''}Judging <span>Portal</span>
+            </h1>
             <p className="hero-text" style={{ color: 'rgba(255,255,255,0.7)', fontSize: '1rem', marginTop: '12px' }}>
-              Complete evaluations for each team. Changes are reflected instantly on the global scoreboard.
+              {profile?.role === 'jury' ? 'Perform high-level evaluation as a Grand Jury member.' : 'Complete evaluations for each team. Changes reflect on global scoreboard.'}
             </p>
             <div className="hero-chips" style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
               <span className="login-tab active" style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '0.9rem' }}>{scoredCount} Scored</span>

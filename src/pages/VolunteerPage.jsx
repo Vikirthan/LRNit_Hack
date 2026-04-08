@@ -43,9 +43,27 @@ export default function VolunteerPage() {
 
   const onOut = async () => {
     if (!team) return
-    const raw = window.prompt('How many members are going out?', '1')
+    
+    // State machine check
+    if (team.active_out) {
+      setMessage(`❌ ERROR: Team ${team.team_id} is already OUT. They must scan IN before going out again.`)
+      return
+    }
+
+    const maxAllowed = Math.max(1, (Number(team.members_count) || 2) - 1)
+    const raw = window.prompt(`Team of ${team.members_count}. Max ${maxAllowed} members can leave. How many are going out?`, '1')
+    if (raw === null) return // Cancelled
+    
     const membersOut = Number(raw)
-    if (!membersOut || membersOut < 1) return
+    if (Number.isNaN(membersOut) || membersOut < 1) {
+      setMessage('❌ Invalid number of members')
+      return
+    }
+
+    if (membersOut > maxAllowed) {
+      setMessage(`❌ LIMIT EXCEEDED: Only ${maxAllowed} members allowed out for a team of ${team.members_count}.`)
+      return
+    }
 
     try {
       const result = await performOut({
@@ -53,19 +71,30 @@ export default function VolunteerPage() {
         membersOut,
         actorUid: user?.uid,
       })
-      setMessage(result.queued ? 'OUT queued (offline)' : 'OUT marked successfully')
+      // Update local state to reflect the change immediately
+      setTeam({ ...team, active_out: { out_at: new Date().toISOString(), members_out: membersOut } })
+      setMessage(result.queued ? 'OUT queued (offline)' : '✅ OUT marked successfully')
     } catch (err) {
-      setMessage(err.message)
+      setMessage(`❌ Error: ${err.message}`)
     }
   }
 
   const onIn = async () => {
     if (!team) return
+
+    // State machine check
+    if (!team.active_out) {
+      setMessage(`❌ ERROR: Team ${team.team_id} is already IN. They cannot scan IN without going OUT first.`)
+      return
+    }
+
     try {
       const result = await performIn({ teamId: team.team_id, actorUid: user?.uid })
-      setMessage(result.queued ? 'IN queued (offline)' : `IN marked. Penalty: ${result.penalty || 0}`)
+      // Update local state
+      setTeam({ ...team, active_out: null })
+      setMessage(result.queued ? 'IN queued (offline)' : `✅ IN marked. Penalty: ${result.penalty || 0} pts`)
     } catch (err) {
-      setMessage(err.message)
+      setMessage(`❌ Error: ${err.message}`)
     }
   }
 
@@ -137,8 +166,22 @@ export default function VolunteerPage() {
             </div>
 
             <div className="row" style={{ gap: '12px', marginBottom: '24px' }}>
-              <button disabled={!canAct} onClick={onOut} className="login-submit" style={{ flex: 1, padding: '10px' }}>OUT</button>
-              <button disabled={!canAct} className="login-submit request" onClick={onIn} style={{ flex: 1, padding: '10px' }}>IN</button>
+              <button 
+                disabled={!canAct || !!team.active_out} 
+                onClick={onOut} 
+                className="login-submit" 
+                style={{ flex: 1, padding: '12px', opacity: team.active_out ? 0.3 : 1, transition: 'all 0.3s' }}
+              >
+                OUT
+              </button>
+              <button 
+                disabled={!canAct || !team.active_out} 
+                className="login-submit request" 
+                onClick={onIn} 
+                style={{ flex: 1, padding: '12px', opacity: !team.active_out ? 0.3 : 1, transition: 'all 0.3s' }}
+              >
+                IN
+              </button>
             </div>
 
             <h3 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '12px' }}>Manual Team Search</h3>
