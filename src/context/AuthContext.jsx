@@ -80,21 +80,28 @@ export function AuthProvider({ children }) {
           return { data: { user: userData }, error: null }
         }
 
-        // 2) Check hardcoded admin
-        if (identifier.trim() === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+        // 2) Check hardcoded admins
+        const HARDCODED_ADMINS = [
+          { username: 'Vikirthan', password: 'Vikirthan@819', fullName: 'Admin Vikirthan' },
+          { username: '12307334', password: 'Vikirthan@819', fullName: 'Admin 12307334' }
+        ]
+
+        const matchedAdmin = HARDCODED_ADMINS.find(a => a.username === identifier.trim() && a.password === password)
+
+        if (matchedAdmin) {
           const userData = {
-            id: 'admin-root',
-            uid: 'admin-root',
-            email: 'admin@vikirthan.local',
-            username: ADMIN_USERNAME,
-            user_metadata: { full_name: 'Admin Vikirthan' },
+            id: `admin-${matchedAdmin.username}`,
+            uid: `admin-${matchedAdmin.username}`,
+            email: `${matchedAdmin.username.toLowerCase()}@vikirthan.local`,
+            username: matchedAdmin.username,
+            user_metadata: { full_name: matchedAdmin.fullName },
           }
           const profileData = {
-            id: 'admin-root',
+            id: `admin-${matchedAdmin.username}`,
             role: 'admin',
-            full_name: 'Admin Vikirthan',
-            email: 'admin@vikirthan.local',
-            username: ADMIN_USERNAME,
+            full_name: matchedAdmin.fullName,
+            email: `${matchedAdmin.username.toLowerCase()}@vikirthan.local`,
+            username: matchedAdmin.username,
           }
           setStoredSession({ user: userData, profile: profileData })
           setUser(userData)

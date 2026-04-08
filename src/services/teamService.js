@@ -111,22 +111,37 @@ export async function upsertTeams(teams) {
     }
 
     const emailRows = []
+    console.log(`[Import] Processing ${teams.length} teams for emails...`)
     for (const t of teams) {
       if (Array.isArray(t.emails) && t.emails.length) {
+        console.log(`[Import] Team ${t.team_id} has emails:`, t.emails)
         t.emails.forEach((email) => {
-          emailRows.push({ team_id: t.team_id, email, updated_at: date })
+          emailRows.push({ team_id: t.team_id, email })
         })
+      } else {
+        console.warn(`[Import] Team ${t.team_id} has NO emails in the parsed object!`)
       }
     }
 
     if (emailRows.length) {
       try {
+        console.log(`[Import] Deleting old emails for ${ids.length} teams...`)
         await supabase.from('team_emails').delete().in('team_id', ids)
+        
+        console.log(`[Import] Inserting ${emailRows.length} email records...`)
         const { error: emailError } = await supabase.from('team_emails').insert(emailRows)
-        if (emailError) console.warn('Failed to insert emails, but teams were saved:', emailError)
+        
+        if (emailError) {
+          console.error('[Import] ERROR inserting emails:', emailError)
+          alert("Import partially failed: Teams saved but emails blocked by database. Check RLS or permissions.")
+        } else {
+          console.log('[Import] Successfully inserted all emails.')
+        }
       } catch (e) {
-        console.warn('Error handling emails - continuing anyway:', e)
+        console.error('[Import] CRITICAL error handling emails:', e)
       }
+    } else {
+      console.warn('[Import] No email rows were generated to insert.')
     }
 
     const firstToken = teams.length === 1 ? await generateTeamQrToken(teams[0].team_id).then(r => r.token).catch(() => null) : null

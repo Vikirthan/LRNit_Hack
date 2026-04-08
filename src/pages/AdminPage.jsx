@@ -435,6 +435,8 @@ export default function AdminPage() {
                     <tr>
                       <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>ID</th>
                       <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Team Entity</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Security</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Emails</th>
                       <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Status</th>
                     </tr>
                   </thead>
@@ -443,6 +445,32 @@ export default function AdminPage() {
                       <tr key={t.team_id} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                         <td style={{ padding: '16px', color: '#60a5fa', fontWeight: 800 }}>{t.team_id}</td>
                         <td style={{ padding: '16px', color: '#fff' }}><strong>{t.team_name}</strong></td>
+                        <td style={{ padding: '16px' }}>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {t.qr_token ? (
+                              <span title="Token Generated" style={{ color: '#34d399', fontSize: '0.9rem', background: 'rgba(52, 211, 153, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🔑 SECURE</span>
+                            ) : (
+                              <span title="No Token" style={{ color: '#f87171', fontSize: '0.9rem', background: 'rgba(248, 113, 113, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🚫 NO TOKEN</span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                             <span style={{ 
+                               color: (t.email_count || 0) > 0 ? '#60a5fa' : '#f87171', 
+                               fontSize: '0.85rem', 
+                               fontWeight: 700,
+                               display: 'flex', 
+                               alignItems: 'center', 
+                               gap: '6px',
+                               background: (t.email_count || 0) > 0 ? 'rgba(96, 165, 250, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                               padding: '4px 10px',
+                               borderRadius: '8px'
+                             }}>
+                               📧 {t.email_count || 0} Emails
+                             </span>
+                          </div>
+                        </td>
                         <td style={{ padding: '16px' }}>
                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                              <span style={{ 
@@ -464,14 +492,6 @@ export default function AdminPage() {
                                fontWeight: 700
                              }}>
                                {t.is_present ? 'PRESENT' : 'ABSENT'}
-                             </span>
-                             {t.qr_token ? (
-                               <span title="Token Generated" style={{ color: '#34d399', fontSize: '0.9rem' }}>🔑</span>
-                             ) : (
-                               <span title="No Token" style={{ color: '#f87171', fontSize: '0.9rem' }}>🚫</span>
-                             )}
-                             <span title={`${t.email_count || 0} emails found`} style={{ color: (t.email_count || 0) > 0 ? '#60a5fa' : 'rgba(255,255,255,0.2)', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                               {t.email_count || 0} 📧
                              </span>
                            </div>
                         </td>
