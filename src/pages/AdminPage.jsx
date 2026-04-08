@@ -99,6 +99,9 @@ export default function AdminPage() {
       } catch (err) {
         console.error(`Failed team ${t.team_id}:`, err)
         fail++
+        setStatus(`⚠️ Failed mailing ${t.team_id}: ${err.message || err.error_description || 'Unknown error'}`)
+        // Let user see the error for a moment before continuing
+        await new Promise(r => setTimeout(r, 1500))
       }
     }
     setStatus(`✅ Bulk mailing complete: ${success} sent, ${fail} failed.`)
