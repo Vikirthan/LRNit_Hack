@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
 import { TEACHER_CRITERIA, TEACHER_CRITERIA_TOTAL } from '../constants/teacherCriteria'
-import { getTeams, saveTeacherScore, subscribeToTeams } from '../services/teamService'
+import { getTeams, saveTeacherScore, subscribeToTeams, verifyScanToken, getRules } from '../services/teamService'
+import QrScanner from '../components/QrScanner'
 
 const STORAGE_KEY = 'ticketscan-teacher-scores'
 
@@ -44,22 +45,61 @@ export default function TeacherPage() {
   const [remarks, setRemarks] = useState('')
   const [status, setStatus] = useState('Ready to score')
   const [savedScores, setSavedScores] = useState(() => loadSavedScores())
-  const [isLoadingTeams, setIsLoadingTeams] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [rules, setRules] = useState({ jury_mode: 'manual' })
+  const [processing, setProcessing] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [pendingTeam, setPendingTeam] = useState(null)
+  const [isConfirmed, setIsConfirmed] = useState(false)
 
   const refreshTeams = async () => {
-    setIsLoadingTeams(true)
     try {
-      const items = await getTeams()
+      const [items, sets] = await Promise.all([getTeams(), getRules()])
       if (items && items.length > 0) {
         setTeams(items)
         setTeam((prev) => items.find((item) => item.team_id === prev.team_id) || items[0])
-        setStatus('Ready to score')
       }
+      if (sets) setRules(sets)
+      setStatus('Ready to score')
     } catch (err) {
       setStatus(`Error: ${err.message}`)
     } finally {
-      setIsLoadingTeams(false)
+      setLoading(false)
     }
+  }
+
+  const handleDecoded = async (token) => {
+    setProcessing(true)
+    setStatus('⌛ Scanning team...')
+    try {
+      const found = await verifyScanToken(token)
+      if ('vibrate' in navigator) navigator.vibrate(100)
+      
+      // Open confirmation modal instead of loading directly
+      setPendingTeam(found)
+      setIsConfirmed(false)
+      setStatus(`✅ Team ${found.team_id} found. Confirm to evaluate.`)
+      setScanOpen(false)
+    } catch (err) {
+      setStatus(`❌ Scan Error: ${err.message}`)
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const handleManualSelect = (t) => {
+    if ('vibrate' in navigator) navigator.vibrate(50)
+    setPendingTeam(t)
+    setIsConfirmed(false)
+  }
+
+  const confirmEvaluation = () => {
+    if (!pendingTeam || !isConfirmed) return
+    if ('vibrate' in navigator) navigator.vibrate([50, 50])
+    setTeam(pendingTeam)
+    setPendingTeam(null)
+    setIsConfirmed(false)
+    setStatus(`Ready to evalutate ${pendingTeam.team_name}`)
   }
 
   useEffect(() => {
@@ -111,7 +151,8 @@ export default function TeacherPage() {
       const next = { ...savedScores, [team.team_id]: payload }
       setSavedScores(next)
       saveScores(next)
-      setStatus(`✓ Saved ${team.team_id} total: ${total}`)
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100])
+      setStatus(`✓ Successfully saved evaluation for ${team.team_name}`)
     } catch (err) {
       setStatus(`Error: ${err.message}`)
     }
@@ -188,32 +229,69 @@ export default function TeacherPage() {
           <aside className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '28px' }}>
             <div className="panel-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                <h2 style={{ color: '#fff', fontSize: '1.3rem', fontWeight: 700 }}>Team Explorer</h2>
-               <button onClick={refreshTeams} disabled={isLoadingTeams} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px' }}>
-                 {isLoadingTeams ? '...' : 'Refresh'}
-               </button>
+               <div style={{ display: 'flex', gap: '8px' }}>
+                 <button 
+                   onClick={() => setScanOpen(!scanOpen)} 
+                   className="login-tab active" 
+                   style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px', background: scanOpen ? '#f87171' : '#6366f1' }}
+                 >
+                   {scanOpen ? 'Close Scan' : '📷 QR Scan'}
+                 </button>
+                 <button onClick={refreshTeams} disabled={isLoadingTeams} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px' }}>
+                   {isLoadingTeams ? '...' : 'Refresh'}
+                 </button>
+               </div>
             </div>
 
-            <div className="sheet-wrap" style={{ maxHeight: '600px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' }}>
-              <table className="sheet-table">
-                <thead>
-                  <tr>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', width: '70px', padding: '15px' }}>ID</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '15px' }}>Name</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teams.map((t) => {
-                    const active = t.team_id === team.team_id
-                    return (
-                      <tr key={t.team_id} className={`sheet-row ${active ? 'active' : ''}`} onClick={() => setTeam(t)} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}>
-                        <td style={{ padding: '15px', color: active ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: active ? 700 : 400 }}>{t.team_id}</td>
-                        <td style={{ padding: '15px', color: active ? '#60a5fa' : 'rgba(255,255,255,0.9)', fontWeight: active ? 700 : 400 }}>{t.team_name}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {scanOpen && (
+              <div style={{ marginBottom: '24px', background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                 <QrScanner onDecoded={handleDecoded} />
+                 {processing && <p style={{ color: '#818cf8', fontSize: '0.8rem', textAlign: 'center', marginTop: '10px' }}>Analyzing scan...</p>}
+              </div>
+            )}
+
+            {rules.jury_mode === 'manual' ? (
+              <div className="sheet-wrap" style={{ maxHeight: '600px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' }}>
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', width: '70px', padding: '15px' }}>ID</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '15px' }}>Name</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teams.map((t) => {
+                      const active = t.team_id === team.team_id
+                      const isPending = t.team_id === pendingTeam?.team_id
+                      return (
+                        <tr 
+                          key={t.team_id} 
+                          className={`sheet-row ${active ? 'active' : ''} ${isPending ? 'pending' : ''}`} 
+                          onClick={() => handleManualSelect(t)} 
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                        >
+                          <td style={{ padding: '15px', color: active ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: (active || isPending) ? 700 : 400 }}>{t.team_id}</td>
+                          <td style={{ padding: '15px', color: active ? '#60a5fa' : isPending ? '#fbbf24' : 'rgba(255,255,255,0.9)', fontWeight: (active || isPending) ? 700 : 400 }}>{t.team_name}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>
+                  <QrScanner onDecoded={handleDecoded} />
+                  {processing && <p style={{ color: '#818cf8', marginTop: '10px' }}>Analyzing Scan...</p>}
+                </div>
+                <div className="login-feature-card" style={{ padding: '16px', background: 'rgba(99, 102, 241, 0.1)' }}>
+                   <div style={{ textAlign: 'center', width: '100%' }}>
+                     <p className="muted" style={{ margin: '0 0 4px 0', fontSize: '0.8rem' }}>Current Team Selection</p>
+                     <strong style={{ color: '#fff', fontSize: '1.1rem' }}>{team.team_name}</strong>
+                   </div>
+                </div>
+              </div>
+            )}
             
             <div style={{ marginTop: '32px', textAlign: 'center' }}>
                <div className="score-meter-track" style={{ background: 'rgba(255,255,255,0.06)', height: '12px', width: '100%' }}>
@@ -290,6 +368,44 @@ export default function TeacherPage() {
             </div>
           </section>
         </section>
+
+        {/* Confirmation Modal */}
+        {pendingTeam && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.8)', padding: '20px' }}>
+            <div className="login-auth-panel" style={{ width: 'min(500px, 100%)', padding: '32px', background: 'rgba(20, 24, 40, 0.95)', border: '1px solid rgba(251, 191, 36, 0.5)', boxShadow: '0 0 60px rgba(0,0,0,0.5)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <div style={{ margin: '0 auto 16px', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', display: 'grid', placeItems: 'center', fontSize: '1.8rem' }}>👤</div>
+                <h2 style={{ color: '#fff', fontSize: '1.8rem', fontWeight: 700, margin: 0 }}>Confirm Team Evaluation</h2>
+                <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '8px' }}>Please verify that you are evaluating the correct team.</p>
+              </div>
+
+              <div style={{ background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.2)', padding: '20px', borderRadius: '20px', marginBottom: '24px' }}>
+                <p style={{ fontSize: '0.8rem', color: '#fbbf24', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>Target Team</p>
+                <h3 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: '0 0 4px 0' }}>{pendingTeam.team_name}</h3>
+                <p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Team ID: {pendingTeam.team_id} | Room: {pendingTeam.room_number || '-'}</p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: `1px solid ${isConfirmed ? '#34d399' : 'rgba(255,255,255,0.1)'}`, cursor: 'pointer', transition: '0.3s' }} onClick={() => setIsConfirmed(!isConfirmed)}>
+                <div style={{ width: '24px', height: '24px', borderRadius: '6px', border: '2px solid #fbbf24', background: isConfirmed ? '#fbbf24' : 'transparent', display: 'grid', placeItems: 'center', color: '#13111c', fontWeight: 900 }}>
+                  {isConfirmed && '✓'}
+                </div>
+                <span style={{ color: isConfirmed ? '#fff' : 'rgba(255,255,255,0.7)', fontWeight: 600, fontSize: '1rem' }}>I confirm I am scoring Team {pendingTeam.team_name}</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '32px' }}>
+                <button onClick={() => setPendingTeam(null)} className="login-tab" style={{ background: 'rgba(255,255,255,0.05)', color: '#fff' }}>Cancel</button>
+                <button 
+                  disabled={!isConfirmed} 
+                  onClick={confirmEvaluation} 
+                  className="login-submit" 
+                  style={{ opacity: isConfirmed ? 1 : 0.5, background: isConfirmed ? 'linear-gradient(135deg, #fbbf24, #d97706)' : 'rgba(59,130,246,0.1)' }}
+                >
+                  Confirm & Evaluate
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

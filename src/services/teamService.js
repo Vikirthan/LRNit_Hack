@@ -9,6 +9,7 @@ const defaultRules = {
   grace_time: 5,
   penalty_per_minute: 1,
   overdue_email_enabled: false,
+  jury_mode: 'manual', // 'manual' or 'scan'
 }
 
 function readLocalTeams() {
@@ -100,6 +101,7 @@ export async function upsertTeams(teams) {
         room_number: t.room_number,
         penalty_points: existing?.penalty_points ?? 0,
         active_out: existing?.active_out ?? null,
+        source_file: t.source_file || null,
         updated_at: date,
       }
     })
@@ -159,8 +161,28 @@ export async function upsertTeams(teams) {
   }
 }
 
-export async function sendQrEmails(teamId) {
-  return sendTeamQrEmail(teamId)
+export async function sendQrEmails(teamId, baseUrl) {
+  return sendTeamQrEmail(teamId, baseUrl)
+}
+
+export async function sendAbsentAlert(teamId, baseUrl) {
+  const { data, error } = await supabase.functions.invoke('alert-away-teams', {
+    body: { teamId, baseUrl }
+  })
+  if (error) throw error
+  return data
+}
+
+export async function deleteTeamsBySource(sourceFile) {
+  if (!supabase) throw new Error('Supabase is not configured yet')
+  if (!sourceFile) throw new Error('Source file name is required')
+
+  const { error } = await supabase
+    .from('teams')
+    .delete()
+    .eq('source_file', sourceFile)
+
+  if (error) throw error
 }
 
 export async function verifyScanToken(token) {
@@ -305,7 +327,7 @@ export async function getTeams() {
   if (!supabase) return readLocalTeams()
 
   try {
-    const { data, error } = await supabase
+      const { data, error } = await supabase
       .from('teams')
       .select('*, team_emails(email)')
       .order('team_name', { ascending: true })

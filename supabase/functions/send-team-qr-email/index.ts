@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { teamId } = await req.json();
+    const { teamId, baseUrl } = await req.json();
 
     if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY is not set in Supabase secrets");
 
@@ -37,7 +37,9 @@ serve(async (req) => {
     const teamEmails = team.team_emails.map((e: any) => ({ email: e.email }));
     if (!teamEmails.length) throw new Error("No emails found for this team");
 
-    const qrUrl = `${req.headers.get("origin") || "http://localhost:5173"}/scan?token=${team.qr_token}`;
+    // Use baseUrl if provided, fallback to requested origin, or default localhost:5173
+    const actualBaseUrl = baseUrl || req.headers.get("origin") || "http://localhost:5173";
+    const qrUrl = `${actualBaseUrl}/scan?token=${team.qr_token}`;
 
     // 2. Send via Brevo (SMTP API v3)
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -49,24 +51,46 @@ serve(async (req) => {
       body: JSON.stringify({
         sender: { name: SENDER_NAME, email: SENDER_EMAIL },
         to: teamEmails,
-        subject: `Your Team Ticket - ${team.team_name}`,
+        subject: `🎟️ Important: Your Aethera X Hackathon Ticket - ${team.team_name}`,
         htmlContent: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-            <p style="text-align: center;"><span style="font-size: 2rem;">🎟️</span></p>
-            <h2 style="color: #6366f1; text-align: center;">TicketScan Access</h2>
-            <p>Hello <strong>${team.team_name}</strong>,</p>
-            <p>Your unique access QR token has been generated. Use the link below to view your digital ticket. You will need to present this at the registration desk for admission.</p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${qrUrl}" style="background: #6366f1; color: white; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-weight: bold; display: inline-block;">View My QR Ticket</a>
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <span style="font-size: 3rem;">🚀</span>
             </div>
-
-            <p style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 0.85rem; color: #475569;">
-              <strong>Note:</strong> This ticket is unique to your team. Please do not share this link with others.
+            
+            <h1 style="color: #1e293b; text-align: center; font-size: 24px; margin-bottom: 10px;">Aethera X - 24 Hours Hackathon</h1>
+            <p style="text-align: center; color: #64748b; font-size: 16px;">Thanks for registering with us!</p>
+            
+            <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 25px 0;" />
+            
+            <p style="font-size: 16px; color: #334155; line-height: 1.6;">Hello <strong>${team.team_name}</strong>,</p>
+            
+            <p style="font-size: 15px; color: #475569; line-height: 1.6;">
+              Your unique access QR token is ready! This QR code is <strong>mandatory</strong> for:
             </p>
             
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-            <p style="font-size: 0.8rem; color: #94a3b8; text-align: center;">TicketScan - Effortless Event Entry</p>
+            <ul style="color: #475569; font-size: 15px; line-height: 1.8;">
+              <li>Punching your presence (Attendance)</li>
+              <li>In/Out entries at the venue</li>
+              <li>Registration for all Judging Rounds</li>
+            </ul>
+
+            <div style="text-align: center; margin: 35px 0;">
+              <a href="${qrUrl}" style="background: #4f46e5; color: white; padding: 16px 32px; text-decoration: none; border-radius: 12px; font-weight: 700; display: inline-block; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">View My QR Ticket</a>
+            </div>
+
+            <p style="background: #eef2ff; padding: 15px; border-radius: 12px; font-size: 0.9rem; color: #3730a3; border-left: 4px solid #4f46e5;">
+              <strong>Team Verification:</strong> Your team is registered with <strong>${team.members_count || 0} members</strong>. 
+              Please ensure all members are present during scanning for attendance and judging.
+            </p>
+
+            <p style="font-size: 15px; color: #475569; margin-top: 25px;">
+              ⚠️ <strong>Important:</strong> Please keep this QR safe. We recommend you <strong>"Star" this email</strong> right now so you can find it instantly at the venue.
+            </p>
+            
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f1f5f9; text-align: center;">
+              <p style="font-size: 0.85rem; color: #94a3b8; margin: 0;">Organized with ❤️ for Aethera X</p>
+            </div>
           </div>
         `,
       }),

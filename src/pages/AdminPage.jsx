@@ -11,13 +11,16 @@ import {
   verifyTeamsInBackend,
   sendQrEmails,
   getActivityLog,
-  generateTeamQrToken
+  generateTeamQrToken,
+  deleteTeamsBySource,
+  verifyScanToken
 } from '../services/teamService'
 import { parseTeamFile } from '../services/csvService'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 import { getPendingAccounts, getAllAccounts, approveAccount, rejectAccount, deleteAccount } from '../services/accountService'
 import TeamTimer from '../components/TeamTimer'
+import QrScanner from '../components/QrScanner'
 
 export default function AdminPage() {
   const { profile, logout } = useAuth()
@@ -34,6 +37,8 @@ export default function AdminPage() {
   const [accounts, setAccounts] = useState([])
   const [status, setStatus] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [processing, setProcessing] = useState(false)
 
   const refresh = async () => {
     try {
@@ -67,9 +72,12 @@ export default function AdminPage() {
     setStatus('Parsing file...')
     try {
       const parsed = await parseTeamFile(file)
-      setStatus(`Importing ${parsed.length} teams...`)
-      await upsertTeams(parsed)
-      setStatus(`✓ Successfully imported ${parsed.length} teams`)
+      // Attach filename as source_file
+      const teamsWithSource = parsed.map(t => ({ ...t, source_file: file.name }))
+      
+      setStatus(`Importing ${parsed.length} teams from ${file.name}...`)
+      await upsertTeams(teamsWithSource)
+      setStatus(`✓ Successfully imported ${parsed.length} teams from ${file.name}`)
       refresh()
     } catch (err) {
       setStatus(`Import failed: ${err.message}`)
@@ -87,12 +95,10 @@ export default function AdminPage() {
 
     for (const t of teams) {
       try {
-        // Validation: Must have emails
         if (!t.email_count || t.email_count === 0) {
-           throw new Error("No emails linked to this team. Please re-import with emails.")
+           throw new Error("No emails linked to this team.")
         }
 
-        // Validation: Must have token
         if (!t.qr_token) {
           setStatus(`🛠️ Generating missing token for ${t.team_id}...`)
           const res = await generateTeamQrToken(t.team_id)
@@ -100,7 +106,8 @@ export default function AdminPage() {
         }
         
         setStatus(`📧 Sending QR to ${t.team_id} (${t.team_name})...`)
-        const res = await sendQrEmails(t.team_id)
+        // Pass origin to fix 404 issues
+        const res = await sendQrEmails(t.team_id, window.location.origin)
         
         if (res?.success === false) {
            throw new Error(res.error || 'Server rejected request')
@@ -111,15 +118,39 @@ export default function AdminPage() {
       } catch (err) {
         console.error(`BulkMail error for ${t.team_id}:`, err)
         fail++
-        const errMsg = err.message || 'Unknown error'
-        setStatus(`⚠️ FAILED ${t.team_id}: ${errMsg}`)
-        // Pause briefly so user can see what failed
-        await new Promise(r => setTimeout(r, 2000))
+        setStatus(`⚠️ FAILED ${t.team_id}: ${err.message}`)
+        await new Promise(r => setTimeout(r, 1000))
       }
     }
     
     setStatus(`🏁 Mailing Finished. Success: ${success}, Failed: ${fail}.`)
     refresh()
+  }
+
+  const onAlertAwayTeams = async () => {
+    const absent = teams.filter(t => !t.is_present)
+    if (absent.length === 0) {
+      alert("All teams are already marked as present!")
+      return
+    }
+
+    if (!window.confirm(`Send "Report to Arena" alert to ${absent.length} absent teams?`)) return
+    
+    setStatus(`📢 Alerting ${absent.length} absent teams...`)
+    let success = 0
+    let fail = 0
+
+    for (const t of absent) {
+      try {
+        setStatus(`📬 Alerting ${t.team_name}...`)
+        const res = await sendAbsentAlert(t.team_id, window.location.origin)
+        if (res?.success) success++
+        else fail++
+      } catch (err) {
+        fail++
+      }
+    }
+    setStatus(`✅ Alert Campaign Finished! Sent: ${success}, Failed: ${fail}`)
   }
 
   const onGenerateAllTokens = async () => {
@@ -171,6 +202,36 @@ export default function AdminPage() {
       refresh()
     } catch (err) {
       setStatus(`Error: ${err.message}`)
+    }
+  }
+
+  const onDeleteBySource = async (sourceFile) => {
+    if (!window.confirm(`Delete ALL teams imported from "${sourceFile}"? This cannot be undone.`)) return
+    try {
+      setStatus(`Deleting teams from source: ${sourceFile}...`)
+      await deleteTeamsBySource(sourceFile)
+      setStatus(`✓ Deleted all teams from ${sourceFile}`)
+      refresh()
+    } catch (err) {
+      setStatus(`Delete failed: ${err.message}`)
+    }
+  }
+
+  const onScanFailsafe = async (token) => {
+    setProcessing(true)
+    setStatus('⌛ Scanning team QR...')
+    try {
+      const found = await verifyScanToken(token)
+      if ('vibrate' in navigator) navigator.vibrate(100)
+      setStatus(`✅ Team Found: ${found.team_name} (ID: ${found.team_id}). Search completed.`)
+      
+      // Auto-filter or highlight logic could go here, but for now just show team info
+      window.alert(`Team Found!\nName: ${found.team_name}\nID: ${found.team_id}\nRoom: ${found.room_number}`)
+      setScanOpen(false)
+    } catch (err) {
+      setStatus(`❌ Scan Error: ${err.message}`)
+    } finally {
+      setProcessing(false)
     }
   }
 
@@ -288,7 +349,7 @@ export default function AdminPage() {
           ))}
         </nav>
 
-        {status && (
+        {status && activeTab !== 'teams' && (
           <div className="login-feature-card" style={{ 
             marginBottom: '32px', 
             padding: '16px 24px', 
@@ -322,7 +383,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-             <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: '1.2fr 0.8fr' }}>
+             <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: '1fr 1fr' }}>
               <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center' }}>
                   <h2 style={{ color: '#fff', fontSize: '1.3rem', fontWeight: 700 }}>Penalty Leaderboard</h2>
@@ -378,7 +439,7 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'teams' && (
-          <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: '1fr 1.5fr' }}>
+          <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: '0.8fr 1.2fr' }}>
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Import Teams</h2>
               <div className="login-field">
@@ -422,13 +483,96 @@ export default function AdminPage() {
                 </div>
                 <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%' }} onClick={onGenerateAllTokens}>🛠️ Generate/Repair ALL Tokens</button>
                 <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
+                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', width: '100%' }} onClick={onAlertAwayTeams}>📢 Alert Absent Teams to Arena</button>
                 <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)' }} onClick={exportToExcel}>📥 Export Master Excel (with QRs)</button>
                 <button className="login-submit" style={{ marginTop: '12px', width: '100%' }} onClick={() => refresh()}>Force Sync Display</button>
               </div>
             </div>
+            
+            <div className="login-auth-panel" style={{ background: 'rgba(15, 18, 30, 0.8)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Activity Terminal</h2>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status ? '#60a5fa' : '#34d399', boxShadow: `0 0 10px ${status ? '#60a5fa' : '#34d399'}` }} />
+              </div>
+              <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)', borderRadius: '20px', padding: '24px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                {status ? (
+                  <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                    <div style={{ fontSize: '2rem', marginBottom: '16px' }}>⚙️</div>
+                    <p style={{ color: '#60a5fa', fontSize: '1.1rem', fontWeight: 600, lineHeight: 1.5, maxWidth: '300px' }}>{status}</p>
+                    <button className="login-tab" style={{ marginTop: '20px', fontSize: '0.75rem' }} onClick={() => setStatus('')}>Clear Log</button>
+                  </div>
+                ) : (
+                  <div style={{ opacity: 0.3 }}>
+                    <div style={{ fontSize: '2rem', marginBottom: '16px' }}>📡</div>
+                    <p style={{ color: '#fff', fontSize: '0.9rem' }}>Waiting for system events...</p>
+                  </div>
+                )}
+              </div>
+              <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                 <div className="login-feature-card" style={{ padding: '16px', flexDirection: 'column', alignItems: 'flex-start' }}>
+                   <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Memory usage</span>
+                   <strong style={{ color: '#fff' }}>Optimal</strong>
+                 </div>
+                 <div className="login-feature-card" style={{ padding: '16px', flexDirection: 'column', alignItems: 'flex-start' }}>
+                   <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Sync Status</span>
+                   <strong style={{ color: '#34d399' }}>Live</strong>
+                 </div>
+              </div>
+            </div>
 
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
-              <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Master Team List ({teams.length})</h2>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', gridColumn: 'span 2' }}>
+               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Data Sources Management</h2>
+               <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem', marginBottom: '20px' }}>List of imported files and their teams</p>
+               
+               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                 {[...new Set(teams.map(t => t.source_file || 'Manually Added / Legacy'))].map(source => {
+                   const teamCount = teams.filter(t => (t.source_file === source || (!t.source_file && source === 'Manually Added / Legacy'))).length
+                   return (
+                     <div key={source} className="login-feature-card" style={{ padding: '20px', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)' }}>
+                       <div>
+                         <strong style={{ display: 'block', color: '#fff' }}>{source}</strong>
+                         <span style={{ color: '#60a5fa', fontSize: '0.85rem' }}>{teamCount} Teams</span>
+                       </div>
+                       {source !== 'Manually Added / Legacy' && (
+                         <button 
+                           onClick={() => onDeleteBySource(source)}
+                           style={{ 
+                             background: 'rgba(239, 68, 68, 0.1)', 
+                             color: '#f87171', 
+                             border: 'none', 
+                             padding: '8px 12px', 
+                             borderRadius: '8px',
+                             cursor: 'pointer',
+                             fontSize: '0.8rem',
+                             fontWeight: 600
+                           }}
+                         >
+                           🗑️ Erase
+                         </button>
+                       )}
+                     </div>
+                   )
+                 })}
+               </div>
+            </div>
+
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', gridColumn: 'span 2' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Master Team List ({teams.length})</h2>
+                <button 
+                  onClick={() => setScanOpen(!scanOpen)} 
+                  style={{ background: scanOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: scanOpen ? '#f87171' : '#818cf8', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  {scanOpen ? 'Close Scanner' : '📷 Scan Failsafe'}
+                </button>
+              </div>
+
+              {scanOpen && (
+                <div style={{ marginBottom: '32px', maxWidth: '400px', margin: '0 auto 32px auto', background: 'rgba(0,0,0,0.3)', padding: '20px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                   <QrScanner onDecoded={onScanFailsafe} />
+                   {processing && <p style={{ color: '#818cf8', textAlign: 'center', marginTop: '15px' }}>Processing Scan...</p>}
+                </div>
+              )}
               <div className="sheet-wrap" style={{ maxHeight: '650px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <table className="sheet-table">
                   <thead>
@@ -637,6 +781,31 @@ export default function AdminPage() {
                       <input type="number" value={rules.grace_time} onChange={(e) => setRules({...rules, grace_time: Number(e.target.value)})} />
                     </div>
                   </div>
+                </div>
+
+                <div className="login-field" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ color: '#fff', marginBottom: '16px', display: 'block' }}>Jury Scoring Mode</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <button 
+                      onClick={() => updateRules({ ...rules, jury_mode: 'manual' }).then(() => { setStatus('Switching to Manual List mode...'); refresh() })}
+                      className={`login-submit ${rules.jury_mode === 'manual' ? '' : 'secondary'}`}
+                      style={{ padding: '12px', fontSize: '0.9rem', background: rules.jury_mode === 'manual' ? '#6366f1' : 'rgba(255,255,255,0.05)', color: rules.jury_mode === 'manual' ? '#fff' : 'rgba(255,255,255,0.4)', opacity: 1 }}
+                    >
+                      {rules.jury_mode === 'manual' && '● '} Manual List
+                    </button>
+                    <button 
+                      onClick={() => updateRules({ ...rules, jury_mode: 'scan' }).then(() => { setStatus('Switching to QR Scan mode...'); refresh() })}
+                      className={`login-submit ${rules.jury_mode === 'scan' ? '' : 'secondary'}`}
+                      style={{ padding: '12px', fontSize: '0.9rem', background: rules.jury_mode === 'scan' ? '#6366f1' : 'rgba(255,255,255,0.05)', color: rules.jury_mode === 'scan' ? '#fff' : 'rgba(255,255,255,0.4)', opacity: 1 }}
+                    >
+                      {rules.jury_mode === 'scan' && '● '} QR Scan Only
+                    </button>
+                  </div>
+                  <p className="muted" style={{ marginTop: '12px', fontSize: '0.8rem' }}>
+                    {rules.jury_mode === 'scan' 
+                      ? '🔒 Mandatory: Jury must scan team QR code to grade.' 
+                      : '🔓 Flexible: Jury can pick teams from a searchable list.'}
+                  </p>
                 </div>
 
                 <div className="login-field">

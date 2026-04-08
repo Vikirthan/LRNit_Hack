@@ -12,6 +12,10 @@ export default function VolunteerPage() {
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const [mode, setMode] = useState('attendance') // 'attendance' | 'movement'
+  const [processing, setProcessing] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [teamDetailsVisible, setTeamDetailsVisible] = useState(false)
 
   useEffect(() => {
     const loadTeams = async () => {
@@ -23,14 +27,24 @@ export default function VolunteerPage() {
   }, [])
 
   const handleDecoded = useCallback(async (decodedText) => {
+    if (processing) return
+    setProcessing(true)
+    setMessage('⌛ Verifying token...')
     try {
       const found = await verifyScanToken(decodedText)
+      // Provide haptic feedback
+      if ('vibrate' in navigator) navigator.vibrate(100)
+      
       setTeam(found)
-      setMessage('Team loaded')
+      setTeamDetailsVisible(true)
+      setMessage('✅ Team profile loaded successfully.')
     } catch (err) {
-      setMessage(err.message)
+      console.error('Scan error:', err)
+      setMessage(`❌ Scan Error: ${err.message}`)
+    } finally {
+      setProcessing(false)
     }
-  }, [])
+  }, [processing])
 
   useEffect(() => {
     const listener = async () => {
@@ -81,6 +95,7 @@ export default function VolunteerPage() {
         actorUid: user?.uid,
       })
       // Update local state to reflect the change immediately
+      if ('vibrate' in navigator) navigator.vibrate([50, 30, 50])
       setTeam({ ...team, active_out: { out_at: new Date().toISOString(), members_out: membersOut } })
       setMessage(result.queued ? 'OUT queued (offline)' : '✅ OUT marked successfully')
     } catch (err) {
@@ -100,6 +115,7 @@ export default function VolunteerPage() {
     try {
       const result = await performIn({ teamId: team.team_id, actorUid: user?.uid })
       // Update local state
+      if ('vibrate' in navigator) navigator.vibrate([50, 30, 50])
       setTeam({ ...team, active_out: null })
       setMessage(result.queued ? 'IN queued (offline)' : `✅ IN marked. Penalty: ${result.penalty || 0} pts`)
     } catch (err) {
@@ -109,12 +125,16 @@ export default function VolunteerPage() {
 
   const onAttendance = async () => {
     if (!team) return
+    setProcessing(true)
     try {
+      if ('vibrate' in navigator) navigator.vibrate(200)
       const result = await performAttendance({ teamId: team.team_id, actorUid: user?.uid })
       setTeam({ ...team, is_present: true })
-      setMessage(result.queued ? 'Attendance queued (offline)' : '✅ Team marked as PRESENT')
+      setMessage(result.queued ? '✓ Attendance queued (offline)' : '✅ SUCCESS: Team marked as PRESENT')
     } catch (err) {
-      setMessage(`❌ Error: ${err.message}`)
+      setMessage(`❌ Status Error: ${err.message}`)
+    } finally {
+      setProcessing(false)
     }
   }
 
@@ -139,145 +159,146 @@ export default function VolunteerPage() {
       <div className="login-bg-orb login-bg-orb-1" />
       <div className="login-bg-orb login-bg-orb-2" />
       <div className="login-bg-grid" />
-
-      <main className="layout" style={{ position: 'relative', zIndex: 1 }}>
-        <header className="topbar">
-          <h1 style={{ color: '#fff' }}>Volunteer Scanner</h1>
-          <div className="topbar-actions">
-            <OnlineIndicator />
-            <button onClick={logout} className="login-tab active" style={{ borderRadius: '10px' }}>Sign Out</button>
+      
+      <main className="layout" style={{ maxWidth: '600px', margin: '0 auto', position: 'relative', zIndex: 1, padding: '20px' }}>
+        <header style={{ marginBottom: '32px', textAlign: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '8px' }}>
+            <div className="login-feature-icon" style={{ width: '40px', height: '40px', fontSize: '1.2rem' }}>⚡</div>
+            <h1 style={{ color: '#fff', fontSize: '1.8rem', margin: 0 }}>Volunteer <span>Portal</span></h1>
           </div>
+          <OnlineIndicator />
         </header>
 
-        <section className="grid two-col" style={{ alignItems: 'start' }}>
-          <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '28px', padding: '24px' }}>
-            <h2 style={{ color: '#fff', fontSize: '1.4rem', marginBottom: '16px' }}>Scan QR</h2>
-            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+        {/* Mode Switcher */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px', background: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '18px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <button 
+            className={`login-tab ${mode === 'attendance' ? 'active' : ''}`}
+            onClick={() => { setMode('attendance'); setTeamDetailsVisible(false); }}
+            style={{ padding: '12px', borderRadius: '14px', fontSize: '0.9rem', transition: '0.3s' }}
+          >
+            📋 Attendance
+          </button>
+          <button 
+            className={`login-tab ${mode === 'movement' ? 'active' : ''}`}
+            onClick={() => { setMode('movement'); setTeamDetailsVisible(false); }}
+            style={{ padding: '12px', borderRadius: '14px', fontSize: '0.9rem', transition: '0.3s' }}
+          >
+            🚶 Movement
+          </button>
+        </div>
+
+        <div className="login-auth-panel" style={{ padding: '32px', borderRadius: '32px', background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(40px)' }}>
+          <div style={{ marginBottom: '24px', textAlign: 'center' }}>
+            <div style={{ background: 'rgba(0,0,0,0.4)', padding: '24px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
               <QrScanner onDecoded={handleDecoded} />
+              {processing && <p style={{ color: '#818cf8', marginTop: '12px', fontWeight: 600 }}>⚙️ Processing Scan...</p>}
             </div>
-            <p className="muted" style={{ marginTop: '12px' }}>{message}</p>
           </div>
 
-          <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '28px', padding: '24px' }}>
-            <h2 style={{ color: '#fff', fontSize: '1.4rem', marginBottom: '16px' }}>Team Details</h2>
+          <div className="status-bar" style={{ 
+            background: message.includes('❌') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+            color: message.includes('❌') ? '#f87171' : '#818cf8',
+            padding: '16px',
+            borderRadius: '16px',
+            fontSize: '0.9rem',
+            textAlign: 'center',
+            marginBottom: '24px',
+            border: '1px solid currentColor',
+            fontWeight: 500
+          }}>
+            {message}
+          </div>
 
-            {team && !team.is_present && (
-              <div 
-                style={{ 
-                  background: 'rgba(245, 158, 11, 0.1)', 
-                  border: '1px solid rgba(245, 158, 11, 0.2)', 
-                  borderRadius: '16px', 
-                  padding: '16px', 
-                  marginBottom: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}
-              >
-                <div>
-                  <h4 style={{ color: '#fbbf24', margin: 0 }}>Attendance Needed</h4>
-                  <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>Team has not checked in yet</p>
+          {team && teamDetailsVisible && (
+            <div style={{ animation: 'fadeIn 0.4s cubic-bezier(0,0,0.2,1)' }}>
+              <div className="login-feature-card" style={{ flexDirection: 'column', alignItems: 'flex-start', padding: '24px', background: 'rgba(255,255,255,0.03)', border: '2px solid rgba(99, 102, 241, 0.4)', boxShadow: '0 0 20px rgba(99, 102, 241, 0.15)' }}>
+                <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', marginBottom: '16px', alignItems: 'flex-start' }}>
+                  <div>
+                    <h3 style={{ color: '#fff', fontSize: '1.3rem', margin: '0 0 4px 0', fontWeight: 700 }}>{team.team_name}</h3>
+                    <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', margin: 0, fontFamily: 'monospace' }}>ID: {team.team_id} | ROOM: {team.room_number}</p>
+                  </div>
+                  <div style={{ 
+                    background: team.is_present ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)', 
+                    color: team.is_present ? '#34d399' : '#fbbf24', 
+                    padding: '6px 14px', 
+                    borderRadius: '10px', 
+                    fontSize: '0.75rem', 
+                    fontWeight: 800,
+                    border: `1px solid ${team.is_present ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
+                  }}>
+                    {team.is_present ? '✅ PRESENT' : '⏳ ARRIVAL PENDING'}
+                  </div>
                 </div>
-                <button 
-                  onClick={onAttendance}
-                  className="login-tab active"
-                  style={{ background: '#f59e0b', color: '#000', fontWeight: 'bold' }}
-                >
-                  Mark Present
-                </button>
-              </div>
-            )}
-            
-            <div className="login-feature-cards" style={{ marginBottom: '20px' }}>
-              <div className="login-feature-card">
-                <div className="login-feature-icon">✨</div>
-                <div>
-                  <strong>{team?.team_name || 'No team selected'}</strong>
-                  <p>ID: {team?.team_id || '-'}</p>
-                </div>
-              </div>
-              <div className="grid two-col" style={{ gap: '10px' }}>
-                <div className="login-feature-card" style={{ padding: '10px' }}>
-                   <div>
-                    <span className="summary-label" style={{ fontSize: '0.7rem' }}>Members</span>
-                    <strong>{team?.members_count ?? '-'}</strong>
-                   </div>
-                </div>
-                <div className="login-feature-card" style={{ padding: '10px' }}>
-                   <div>
-                    <span className="summary-label" style={{ fontSize: '0.7rem' }}>Room</span>
-                    <strong>{team?.room_number || '-'}</strong>
-                   </div>
-                </div>
-              </div>
-            </div>
 
-            <div className="row" style={{ gap: '12px', marginBottom: '24px' }}>
-              <button 
-                disabled={!canAct || !!team.active_out} 
-                onClick={onOut} 
-                className="login-submit" 
-                style={{ flex: 1, padding: '12px', opacity: team.active_out ? 0.3 : 1, transition: 'all 0.3s' }}
-              >
-                OUT
-              </button>
-              <button 
-                disabled={!canAct || !team.active_out} 
-                className="login-submit request" 
-                onClick={onIn} 
-                style={{ flex: 1, padding: '12px', opacity: !team.active_out ? 0.3 : 1, transition: 'all 0.3s' }}
-              >
-                IN
-              </button>
-            </div>
-
-            <h3 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '12px' }}>Manual Team Search</h3>
-            <form className="login-input-wrap" onSubmit={onSearch} style={{ marginBottom: '16px' }}>
-              <span className="login-input-icon">🔍</span>
-              <input placeholder="Type team name or ID" value={search} onChange={(e) => setSearch(e.target.value)} />
-              <button type="submit" disabled={searching} className="login-tab active" style={{ padding: '4px 12px', fontSize: '0.8rem' }}>
-                {searching ? '...' : 'Search'}
-              </button>
-            </form>
-
-            <div className="sheet-wrap" style={{ maxHeight: '220px', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <table className="sheet-table" style={{ fontSize: '0.85rem' }}>
-                <thead>
-                  <tr>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)' }}>#</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)' }}>Team ID</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)' }}>Name</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)' }}>Room</th>
-                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)' }}>-</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {searchResults.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="muted" style={{ textAlign: 'center', padding: '20px' }}>No teams found</td>
-                    </tr>
+                <div style={{ width: '100%', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px' }}>
+                  {mode === 'attendance' ? (
+                    <button 
+                      className="login-submit" 
+                      onClick={onAttendance} 
+                      disabled={processing || team.is_present}
+                      style={{ 
+                        background: team.is_present ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #059669)',
+                        color: team.is_present ? 'rgba(255,255,255,0.3)' : '#fff',
+                        boxShadow: team.is_present ? 'none' : '0 8px 16px rgba(16, 185, 129, 0.2)'
+                      }}
+                    >
+                      {team.is_present ? '✓ Attendance Verified' : 'Confirm Team Presence'}
+                    </button>
                   ) : (
-                    searchResults.map((item, index) => (
-                      <tr key={item.team_id} 
-                        className={team?.team_id === item.team_id ? 'sheet-row active' : 'sheet-row'}
-                        style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}
-                        onClick={() => setTeam(item)}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', width: '100%' }}>
+                      <button 
+                        className="login-submit" 
+                        onClick={onOut} 
+                        disabled={team.active_out || !team.is_present}
+                        style={{ 
+                          background: (team.active_out || !team.is_present) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #f43f5e, #e11d48)',
+                          boxShadow: (team.active_out || !team.is_present) ? 'none' : '0 8px 16px rgba(244, 63, 94, 0.2)'
+                        }}
                       >
-                        <td style={{ color: 'rgba(255,255,255,0.4)' }}>{index + 1}</td>
-                        <td style={{ color: '#fff' }}><strong>{item.team_id}</strong></td>
-                        <td style={{ color: 'rgba(255,255,255,0.8)' }}>{item.team_name}</td>
-                        <td style={{ color: 'rgba(255,255,255,0.6)' }}>{item.room_number || '-'}</td>
-                        <td>
-                          <span style={{ color: '#60a5fa', fontSize: '1.2rem' }}>→</span>
-                        </td>
-                      </tr>
-                    ))
+                         🚩 Scan OUT
+                      </button>
+                      <button 
+                        className="login-submit" 
+                        onClick={onIn} 
+                        disabled={!team.active_out}
+                        style={{ 
+                          background: !team.active_out ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                          boxShadow: !team.active_out ? 'none' : '0 8px 16px rgba(59, 130, 246, 0.2)'
+                        }}
+                      >
+                         🔙 Scan IN
+                      </button>
+                    </div>
                   )}
-                </tbody>
-              </table>
+                  {!team.is_present && mode === 'movement' && (
+                    <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '12px', textAlign: 'center', fontWeight: 600 }}>
+                      ⚠️ Team must mark attendance before managing movements.
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
+          )}
+
+          <div style={{ marginTop: '32px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '32px' }}>
+            <form onSubmit={onSearch} className="login-field">
+              <label style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', marginBottom: '12px' }}>Manual Search (Last Resort)</label>
+              <div className="login-input-wrap" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                <input 
+                  type="text" 
+                  value={search} 
+                  onChange={(e) => setSearch(e.target.value)} 
+                  placeholder="Type Team Name or ID..."
+                  className="login-input"
+                  style={{ border: 'none' }}
+                />
+                <button type="submit" disabled={searching} className="login-tab active" style={{ padding: '0 20px', borderRadius: '0 14px 14px 0' }}>{searching ? '...' : '🔍'}</button>
+              </div>
+            </form>
           </div>
-        </section>
+
+          <button onClick={() => logout()} style={{ background: 'none', border: 'none', cursor: 'pointer', marginTop: '40px', width: '100%', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem' }}>🔐 Terminate Session</button>
+        </div>
       </main>
     </div>
   )

@@ -5,6 +5,9 @@ export default function QrScanner({ onDecoded }) {
   const containerId = useRef(`qr-${Math.random().toString(36).slice(2)}`)
   const scannerRef = useRef(null)
 
+  const onDecodedRef = useRef(onDecoded)
+  onDecodedRef.current = onDecoded
+
   useEffect(() => {
     let mounted = true
 
@@ -15,7 +18,7 @@ export default function QrScanner({ onDecoded }) {
         await scannerRef.current.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 240, height: 240 } },
-          (decodedText) => onDecoded(decodedText),
+          (decodedText) => onDecodedRef.current(decodedText),
           () => undefined,
         )
       } catch {
@@ -31,7 +34,7 @@ export default function QrScanner({ onDecoded }) {
         scannerRef.current.stop().catch(() => undefined)
       }
     }
-  }, [onDecoded])
+  }, [])
 
   return <div id={containerId.current} className="scanner-box" />
 }

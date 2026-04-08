@@ -160,17 +160,21 @@ export default function PublicTicketPage() {
                 <div style={{ 
                   padding: '6px 12px', 
                   borderRadius: '10px', 
-                  background: team.is_present ? 'rgba(34, 197, 94, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                  border: `1px solid ${team.is_present ? 'rgba(34, 197, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
-                  color: team.is_present ? '#4ade80' : '#fbbf24',
+                  background: team.is_present ? 'rgba(34, 197, 94, 0.1)' : 'rgba(96, 165, 250, 0.1)',
+                  border: `1px solid ${team.is_present ? 'rgba(34, 197, 94, 0.2)' : 'rgba(96, 165, 250, 0.2)'}`,
+                  color: team.is_present ? '#4ade80' : '#60a5fa',
                   fontSize: '0.75rem',
-                  fontWeight: '700'
+                  fontWeight: '800'
                 }}>
-                  {team.is_present ? '✓ VERIFIED' : '待定 PENDING'}
+                  {team.is_present ? 'ADMITTED' : 'NOT ARRIVED'}
                 </div>
              </div>
 
              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div>
+                   <p style={{ margin: '0 0 4px 0', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Members</p>
+                   <p style={{ margin: 0, color: '#fff', fontWeight: '600' }}>{team.members_count || 0} Participants</p>
+                </div>
                 <div>
                    <p style={{ margin: '0 0 4px 0', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Location</p>
                    <p style={{ margin: 0, color: '#fff', fontWeight: '600' }}>{team.room_number || 'TBA'}</p>

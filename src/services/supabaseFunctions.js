@@ -17,8 +17,8 @@ export async function generateTeamQrToken(teamId) {
   return invokeFunction('generate-team-qr-token', { teamId })
 }
 
-export async function sendTeamQrEmail(teamId) {
-  return invokeFunction('send-team-qr-email', { teamId })
+export async function sendTeamQrEmail(teamId, baseUrl) {
+  return invokeFunction('send-team-qr-email', { teamId, baseUrl })
 }
 
 export async function sendOverdueAlert(teamId, durationMin, overage) {
