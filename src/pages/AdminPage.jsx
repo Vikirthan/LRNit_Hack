@@ -9,7 +9,8 @@ import {
   getRules, 
   saveRules as updateRules,
   verifyTeamsInBackend,
-  sendQrEmails
+  sendQrEmails,
+  getActivityLog
 } from '../services/teamService'
 import { parseTeamFile } from '../services/csvService'
 import { getPendingAccounts, getAllAccounts, approveAccount, rejectAccount, deleteAccount } from '../services/accountService'
@@ -20,23 +21,31 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [teams, setTeams] = useState([])
   const [teacherScores, setTeacherScores] = useState([])
-  const [rules, setRules] = useState({ max_break_time: 15, grace_time: 5 })
+  const [rules, setRules] = useState({ 
+    max_break_time: 15, 
+    grace_time: 5, 
+    penalty_per_unit: 10,
+    is_active: true 
+  })
+  const [logs, setLogs] = useState([])
   const [accounts, setAccounts] = useState([])
   const [status, setStatus] = useState(null)
   const [importing, setImporting] = useState(false)
 
   const refresh = async () => {
     try {
-      const [t, s, r, a] = await Promise.all([
+      const [t, s, r, a, l] = await Promise.all([
         getTeams(),
         getTeacherScores(),
         getRules(),
-        getAllAccounts()
+        getAllAccounts(),
+        getActivityLog()
       ])
       setTeams(t)
       setTeacherScores(s)
       if (r) setRules(r)
       setAccounts(a)
+      setLogs(l)
     } catch (err) {
       console.error('Refresh error:', err)
     }
@@ -361,28 +370,138 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'settings' && (
-          <div className="login-auth-panel" style={{ maxWidth: '600px', background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
-            <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>Event Protocols</h2>
-            <div className="stack" style={{ gap: '28px' }}>
-              <div className="login-field">
-                <label style={{ color: '#fff', marginBottom: '8px' }}>Max Break Time (Minutes)</label>
-                <div className="login-input-wrap">
-                  <input type="number" value={rules.max_break_time} onChange={(e) => setRules({...rules, max_break_time: Number(e.target.value)})} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '32px' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
+              <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>Event Protocols</h2>
+              <div className="stack" style={{ gap: '28px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div className="login-field">
+                    <label style={{ color: '#fff', marginBottom: '8px' }}>Max Break Time (Minutes)</label>
+                    <div className="login-input-wrap">
+                      <input type="number" value={rules.max_break_time} onChange={(e) => setRules({...rules, max_break_time: Number(e.target.value)})} />
+                    </div>
+                  </div>
+                  <div className="login-field">
+                    <label style={{ color: '#fff', marginBottom: '8px' }}>Grace Period (Minutes)</label>
+                    <div className="login-input-wrap">
+                      <input type="number" value={rules.grace_time} onChange={(e) => setRules({...rules, grace_time: Number(e.target.value)})} />
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="login-field">
-                <label style={{ color: '#fff', marginBottom: '8px' }}>Grace Period (Minutes)</label>
-                <div className="login-input-wrap">
-                  <input type="number" value={rules.grace_time} onChange={(e) => setRules({...rules, grace_time: Number(e.target.value)})} />
+
+                <div className="login-field">
+                  <label style={{ color: '#fff', marginBottom: '8px' }}>Penalty per 5 mins (Marks)</label>
+                  <div className="login-input-wrap">
+                     <span className="login-input-icon">⚠️</span>
+                     <input type="number" value={rules.penalty_per_unit || 0} onChange={(e) => setRules({...rules, penalty_per_unit: Number(e.target.value)})} />
+                  </div>
                 </div>
+
+                <div style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+                   <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem' }}>
+                     <strong>Logic:</strong> Teams will be penalized {rules.penalty_per_unit} marks for every 5-minute block they exceed beyond the {rules.max_break_time} min limit.
+                   </p>
+                </div>
+
+                <button 
+                  onClick={() => updateRules({...rules, is_active: true}).then(() => { setStatus('Protocol updated and activated'); refresh() })}
+                  className="login-submit" 
+                  style={{ width: '100%', marginTop: '16px' }}
+                >
+                  Save & Deploy Protocol
+                </button>
               </div>
-              <button 
-                onClick={() => updateRules(rules).then(() => setStatus('Protocol updated successfully'))}
-                className="login-submit" 
-                style={{ width: '100%', marginTop: '16px' }}
-              >
-                Save Protocol Changes
-              </button>
+            </div>
+
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
+              <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Managed Protocols</h2>
+              <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Configuration</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Status</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'right', padding: '16px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="sheet-row">
+                      <td style={{ padding: '16px' }}>
+                        <strong style={{ color: '#fff', display: 'block' }}>Hackathon Standard</strong>
+                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>{rules.max_break_time}m limit · {rules.penalty_per_unit}pts / 5m</span>
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        <span style={{ 
+                          padding: '4px 10px', 
+                          borderRadius: '8px', 
+                          fontSize: '0.75rem', 
+                          background: rules.is_active ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.05)',
+                          color: rules.is_active ? '#10b981' : 'rgba(255,255,255,0.4)',
+                          fontWeight: 700 
+                        }}>
+                          {rules.is_active ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                        <button 
+                          onClick={() => updateRules({...rules, is_active: !rules.is_active}).then(() => { setStatus(rules.is_active ? 'Protocol Deactivated' : 'Protocol Activated'); refresh() })}
+                          className="login-tab" 
+                          style={{ padding: '6px 14px', fontSize: '0.8rem', background: rules.is_active ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', color: rules.is_active ? '#f87171' : '#60a5fa' }}
+                        >
+                          {rules.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center' }}>
+                <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700 }}>Activity Streams (Logs)</h2>
+                <button onClick={() => refresh()} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Refresh Logs</button>
+              </div>
+              <div className="sheet-wrap" style={{ maxHeight: '400px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <table className="sheet-table" style={{ fontSize: '0.9rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '14px' }}>Event</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '14px' }}>Details</th>
+                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'right', padding: '14px' }}>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log, i) => (
+                      <tr key={i} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td style={{ padding: '14px' }}>
+                          <span style={{ 
+                            textTransform: 'uppercase', 
+                            fontSize: '0.65rem', 
+                            color: '#60a5fa', 
+                            fontWeight: 800, 
+                            padding: '2px 6px', 
+                            border: '1px solid rgba(96, 165, 250, 0.3)', 
+                            borderRadius: '4px' 
+                          }}>{log.type}</span>
+                        </td>
+                        <td style={{ padding: '14px', color: 'rgba(255,255,255,0.8)' }}>
+                           {log.type === 'scan' && `Scan ${log.action} for Team ${log.team_id}`}
+                           {log.type === 'penalty' && `Manual adjustment for Team ${log.team_id}: ${log.delta}pts`}
+                           {log.type === 'score' && `Evaluation score submitted: ${log.total}pts`}
+                           {log.type === 'break' && `Break duration: ${log.duration_min}m`}
+                        </td>
+                        <td style={{ padding: '14px', color: 'rgba(255,255,255,0.4)', textAlign: 'right', fontSize: '0.8rem' }}>
+                          {new Date(log.timestamp).toLocaleTimeString()}
+                        </td>
+                      </tr>
+                    ))}
+                    {logs.length === 0 && (
+                      <tr><td colSpan="3" style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.2)' }}>No activity recorded yet</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
