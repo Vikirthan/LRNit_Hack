@@ -43,7 +43,7 @@ serve(async (req) => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "TicketScan <admin@lrnit.in>", // Change this to your verified domain
+        from: "TicketScan <onboarding@resend.dev>", 
         to: emails,
         subject: `Your Team Ticket - ${team.team_name}`,
         html: `
