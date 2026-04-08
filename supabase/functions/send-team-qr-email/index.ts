@@ -70,9 +70,10 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("Function error:", error.message);
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
+      status: 200, // Return 200 to avoid generic Supabase wrapper, but logical failure
     });
   }
 });

@@ -93,7 +93,10 @@ export default function AdminPage() {
           t.qr_token = res.token // Update local ref for subsequent send
         }
         
-        await sendQrEmails(t.team_id)
+        const res = await sendQrEmails(t.team_id)
+        if (res?.success === false) {
+           throw new Error(res.error || 'Server error')
+        }
         success++
         setStatus(`Mailing: ${success} sent, ${fail} failed...`)
       } catch (err) {
