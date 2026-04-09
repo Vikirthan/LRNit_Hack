@@ -13,24 +13,21 @@ export default defineConfig({
         name: 'TicketScan - Hackathon Break Tracker',
         short_name: 'TicketScan',
         description: '24-hour hackathon attendance and break tracking app',
-        theme_color: '#0c7a5f',
-        background_color: '#f2efe4',
+        theme_color: '#0b0f1a',
+        background_color: '#0b0f1a',
         display: 'standalone',
+        orientation: 'portrait',
+        scope: '/',
         start_url: '/',
+        categories: ['productivity', 'utilities'],
         icons: [
           {
             src: 'favicon.svg',
-            sizes: '192x192',
+            sizes: '192x192 512x512',
             type: 'image/svg+xml',
             purpose: 'any'
-          },
-          {
-            src: 'favicon.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'maskable'
-          },
-        ],
+          }
+        ]
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],

@@ -172,13 +172,14 @@ export default function VolunteerPage() {
       
       <main className="layout volunteer-workspace" style={{ maxWidth: '600px', width: '100%', margin: '0 auto', position: 'relative', zIndex: 1, padding: '20px' }}>
         <header style={{ marginBottom: '32px', textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
             <div className="login-feature-icon" style={{ width: '40px', height: '40px', fontSize: '1.2rem', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>⚡</div>
             <h1 style={{ color: '#fff', fontSize: '1.8rem', margin: 0 }}>Volunteer <span>Portal</span></h1>
           </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
             <OnlineIndicator />
-            <button onClick={logout} className="login-tab" style={{ background: 'rgba(255,255,255,0.05)', padding: '6px 12px', fontSize: '0.85rem' }}>Sign Out</button>
+            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.1)' }} />
+            <button onClick={logout} className="login-tab active" style={{ padding: '8px 16px', fontSize: '0.85rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.2)' }}>Sign Out</button>
           </div>
         </header>
 

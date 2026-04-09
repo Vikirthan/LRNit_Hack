@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { requestAccount } from '../services/accountService'
+import PWAInstallPrompt from '../components/PWAInstallPrompt'
 
 export default function LoginPage() {
   const { user, profile, login } = useAuth()
@@ -271,6 +272,8 @@ export default function LoginPage() {
               )}
             </form>
           )}
+
+          <PWAInstallPrompt />
         </section>
       </div>
     </div>

@@ -1003,7 +1003,12 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'mailing' && (
-          <div className="mailing-center" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '32px' }}>
+          <div className="mailing-center" style={{ 
+            display: 'flex', 
+            flexDirection: window.innerWidth < 1024 ? 'column' : 'row', 
+            gap: '32px',
+            animation: 'fadeIn 0.5s ease-out'
+          }}>
             {/* Left: List Management */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
