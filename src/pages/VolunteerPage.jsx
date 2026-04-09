@@ -16,6 +16,8 @@ export default function VolunteerPage() {
   const [processing, setProcessing] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
   const [teamDetailsVisible, setTeamDetailsVisible] = useState(false)
+  const [pendingTeam, setPendingTeam] = useState(null)
+  const [isConfirmed, setIsConfirmed] = useState(false)
 
   useEffect(() => {
     const loadTeams = async () => {
@@ -32,12 +34,11 @@ export default function VolunteerPage() {
     setMessage('⌛ Verifying token...')
     try {
       const found = await verifyScanToken(decodedText)
-      // Provide haptic feedback
       if ('vibrate' in navigator) navigator.vibrate(100)
       
-      setTeam(found)
-      setTeamDetailsVisible(true)
-      setMessage('✅ Team profile loaded successfully.')
+      setPendingTeam(found)
+      setIsConfirmed(false)
+      setMessage(`✅ Team ${found.team_id} found. Please confirm.`)
     } catch (err) {
       console.error('Scan error:', err)
       setMessage(`❌ Scan Error: ${err.message}`)
@@ -45,6 +46,15 @@ export default function VolunteerPage() {
       setProcessing(false)
     }
   }, [processing])
+
+  const confirmTeamLoad = () => {
+    if (!pendingTeam || !isConfirmed) return
+    if ('vibrate' in navigator) navigator.vibrate([50, 50])
+    setTeam(pendingTeam)
+    setPendingTeam(null)
+    setTeamDetailsVisible(true)
+    setMessage('✅ Team profile loaded successfully.')
+  }
 
   useEffect(() => {
     const listener = async () => {
@@ -155,18 +165,21 @@ export default function VolunteerPage() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page volunteer-page">
       <div className="login-bg-orb login-bg-orb-1" />
       <div className="login-bg-orb login-bg-orb-2" />
       <div className="login-bg-grid" />
       
-      <main className="layout" style={{ maxWidth: '600px', margin: '0 auto', position: 'relative', zIndex: 1, padding: '20px' }}>
+      <main className="layout volunteer-workspace" style={{ maxWidth: '600px', width: '100%', margin: '0 auto', position: 'relative', zIndex: 1, padding: '20px' }}>
         <header style={{ marginBottom: '32px', textAlign: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '8px' }}>
-            <div className="login-feature-icon" style={{ width: '40px', height: '40px', fontSize: '1.2rem' }}>⚡</div>
+            <div className="login-feature-icon" style={{ width: '40px', height: '40px', fontSize: '1.2rem', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>⚡</div>
             <h1 style={{ color: '#fff', fontSize: '1.8rem', margin: 0 }}>Volunteer <span>Portal</span></h1>
           </div>
-          <OnlineIndicator />
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center' }}>
+            <OnlineIndicator />
+            <button onClick={logout} className="login-tab" style={{ background: 'rgba(255,255,255,0.05)', padding: '6px 12px', fontSize: '0.85rem' }}>Sign Out</button>
+          </div>
         </header>
 
         {/* Mode Switcher */}
@@ -297,8 +310,45 @@ export default function VolunteerPage() {
             </form>
           </div>
 
-          <button onClick={() => logout()} style={{ background: 'none', border: 'none', cursor: 'pointer', marginTop: '40px', width: '100%', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem' }}>🔐 Terminate Session</button>
         </div>
+
+        {/* Confirmation Modal */}
+        {pendingTeam && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.8)', padding: '20px' }}>
+            <div className="login-auth-panel" style={{ width: 'min(500px, 100%)', padding: '32px', background: 'rgba(20, 24, 40, 0.95)', border: '1px solid rgba(129, 140, 248, 0.5)', boxShadow: '0 0 60px rgba(0,0,0,0.5)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <div style={{ margin: '0 auto 16px', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(129, 140, 248, 0.2)', color: '#818cf8', display: 'grid', placeItems: 'center', fontSize: '1.8rem' }}>👤</div>
+                <h2 style={{ color: '#fff', fontSize: '1.8rem', fontWeight: 700, margin: 0 }}>Confirm Team</h2>
+                <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '8px' }}>Verify the team's identity before proceeding.</p>
+              </div>
+
+              <div style={{ background: 'rgba(129, 140, 248, 0.05)', border: '1px solid rgba(129, 140, 248, 0.2)', padding: '20px', borderRadius: '20px', marginBottom: '24px' }}>
+                <p style={{ fontSize: '0.8rem', color: '#818cf8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>Detected Team</p>
+                <h3 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: '0 0 4px 0' }}>{pendingTeam.team_name}</h3>
+                <p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Team ID: {pendingTeam.team_id} | Room: {pendingTeam.room_number || '-'}</p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: `1px solid ${isConfirmed ? '#34d399' : 'rgba(255,255,255,0.1)'}`, cursor: 'pointer', transition: '0.3s' }} onClick={() => setIsConfirmed(!isConfirmed)}>
+                <div style={{ width: '24px', height: '24px', borderRadius: '6px', border: '2px solid #818cf8', background: isConfirmed ? '#818cf8' : 'transparent', display: 'grid', placeItems: 'center', color: '#13111c', fontWeight: 900 }}>
+                  {isConfirmed && '✓'}
+                </div>
+                <span style={{ color: isConfirmed ? '#fff' : 'rgba(255,255,255,0.7)', fontWeight: 600, fontSize: '1rem' }}>Confirm this is {pendingTeam.team_name}</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '32px' }}>
+                <button onClick={() => setPendingTeam(null)} className="login-tab" style={{ background: 'rgba(255,255,255,0.05)', color: '#fff' }}>Cancel</button>
+                <button 
+                  disabled={!isConfirmed} 
+                  onClick={confirmTeamLoad} 
+                  className="login-submit" 
+                  style={{ opacity: isConfirmed ? 1 : 0.5, background: isConfirmed ? 'linear-gradient(135deg, #818cf8, #6366f1)' : 'rgba(59,130,246,0.1)' }}
+                >
+                  Confirm & Load
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

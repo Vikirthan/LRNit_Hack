@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { requestAccount } from '../services/accountService'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { user, profile, login } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState('login') // 'login' | 'request'
   const [identifier, setIdentifier] = useState('')
@@ -12,6 +12,13 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user && profile) {
+      navigate('/', { replace: true })
+    }
+  }, [user, profile, navigate])
 
   // Request account form
   const [reqForm, setReqForm] = useState({

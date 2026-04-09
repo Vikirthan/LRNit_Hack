@@ -237,8 +237,8 @@ export default function TeacherPage() {
                  >
                    {scanOpen ? 'Close Scan' : '📷 QR Scan'}
                  </button>
-                 <button onClick={refreshTeams} disabled={isLoadingTeams} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px' }}>
-                   {isLoadingTeams ? '...' : 'Refresh'}
+                 <button onClick={refreshTeams} disabled={loading} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px' }}>
+                   {loading ? '...' : 'Refresh'}
                  </button>
                </div>
             </div>

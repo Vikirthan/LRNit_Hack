@@ -15,7 +15,8 @@ import {
   deleteTeamsBySource,
   verifyScanToken
 } from '../services/teamService'
-import { parseTeamFile } from '../services/csvService'
+import { parseTeamFile, parseRecipientFile } from '../services/csvService'
+import { sendCustomEmail } from '../services/supabaseFunctions'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 import { getPendingAccounts, getAllAccounts, approveAccount, rejectAccount, deleteAccount } from '../services/accountService'
@@ -39,6 +40,15 @@ export default function AdminPage() {
   const [importing, setImporting] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
   const [processing, setProcessing] = useState(false)
+  
+  // Mailing Center States
+  const [recipients, setRecipients] = useState([])
+  const [mailSubject, setMailSubject] = useState('')
+  const [mailContent, setMailContent] = useState('')
+  const [mailSignature, setMailSignature] = useState('Aethera X Organizing Team')
+  const [mailFromEmail, setMailFromEmail] = useState('')
+  const [mailFromName, setMailFromName] = useState('')
+  const [sendingCustom, setSendingCustom] = useState(false)
 
   const refresh = async () => {
     try {
@@ -235,6 +245,73 @@ export default function AdminPage() {
     }
   }
 
+  const handleRecipientImport = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setStatus('Parsing recipient list...')
+    try {
+      const data = await parseRecipientFile(file)
+      setRecipients(data)
+      setStatus(`✓ Loaded ${data.length} recipients. Now compose your mail below.`)
+    } catch (err) {
+      setStatus(`Import failed: ${err.message}`)
+    }
+  }
+
+  const handleSendCustomBatch = async () => {
+    if (!mailSubject.trim() || !mailContent.trim()) {
+      alert("Please provide both subject and content.")
+      return
+    }
+    if (recipients.length === 0) {
+      alert("Please upload a recipient list first.")
+      return
+    }
+
+    if (!window.confirm(`Send custom email to ${recipients.length} recipients?`)) return
+
+    setSendingCustom(true)
+    let success = 0
+    let fail = 0
+    setStatus(`📨 Starting custom batch mailing...`)
+
+    for (let i = 0; i < recipients.length; i++) {
+        const r = recipients[i]
+        try {
+            setStatus(`📫 Sending to ${r.name || r.email} (${i+1}/${recipients.length})...`)
+            const res = await sendCustomEmail({
+                email: r.email,
+                name: r.name,
+                subject: mailSubject,
+                content: mailContent,
+                signature: mailSignature,
+                fromEmail: mailFromEmail,
+                fromName: mailFromName
+            })
+            if (res?.success) success++
+            else throw new Error(res?.error || "Unknown error")
+        } catch (err) {
+            fail++
+            console.error(`Mailing error for ${r.email}:`, err)
+        }
+    }
+
+    setSendingCustom(false)
+    setStatus(`🏁 Mailing Complete. Success: ${success}, Failed: ${fail}.`)
+  }
+
+  const downloadMailingTemplate = () => {
+    const template = [
+      { name: 'John Doe', email: 'john@gmail.com' },
+      { name: 'Jane Smith', email: 'jane@example.com' }
+    ]
+    const ws = XLSX.utils.json_to_sheet(template)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Template")
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    saveAs(new Blob([wbout], { type: "application/octet-stream" }), "Mailing_Template.xlsx")
+  }
+
   const exportToExcel = () => {
     const data = teams.map(t => ({
       'Team ID': t.team_id,
@@ -337,14 +414,14 @@ export default function AdminPage() {
           gap: '8px',
           overflowX: 'auto' 
         }}>
-          {['dashboard', 'teams', 'judge', 'settings', 'accounts'].map(tab => (
+          {['dashboard', 'teams', 'judge', 'settings', 'accounts', 'mailing'].map(tab => (
             <button 
               key={tab}
               className={activeTab === tab ? 'login-tab active' : 'login-tab'} 
               style={{ flex: 1, textTransform: 'capitalize', padding: '12px 20px', fontSize: '0.95rem' }}
               onClick={() => setActiveTab(tab)}
             >
-              {tab}
+              {tab === 'mailing' ? '📧 Mailing' : tab}
             </button>
           ))}
         </nav>
@@ -920,6 +997,135 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'mailing' && (
+          <div className="mailing-center" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '32px' }}>
+            {/* Left: List Management */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
+                <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>📋</span> Recipient List
+                </h2>
+                <p className="muted" style={{ fontSize: '0.85rem', marginBottom: '24px' }}>
+                  Upload a separate CSV or Excel file containing <strong>Name</strong> and <strong>Email</strong>.
+                </p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '12px', background: '#6366f1' }}>
+                    📁 Choose List File
+                    <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleRecipientImport} />
+                  </label>
+                  <button onClick={downloadMailingTemplate} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '10px', borderRadius: '12px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                    📥 Download Sample Template
+                  </button>
+                </div>
+
+                {recipients.length > 0 && (
+                  <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <span style={{ color: '#4ade80', fontSize: '0.85rem', fontWeight: 600 }}>{recipients.length} Contacts Loaded</span>
+                      <button onClick={() => setRecipients([])} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Clear</button>
+                    </div>
+                    <div style={{ maxHeight: '300px', overflowY: 'auto', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.2)' }}>
+                      {recipients.map((r, i) => (
+                        <div key={i} style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                          <span style={{ color: '#fff' }}>{r.name || 'No Name'}</span>
+                          <span className="muted">{r.email}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Composer */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div className="login-auth-panel" style={{ padding: '32px', position: 'relative' }}>
+                <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '24px' }}>✍️ Compose Message</h2>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sender Name</label>
+                      <input 
+                        className="login-input" 
+                        placeholder="e.g. Aethera X Team" 
+                        value={mailFromName}
+                        onChange={e => setMailFromName(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sender Email</label>
+                      <input 
+                        className="login-input" 
+                        placeholder="e.g. info@aetherax.org" 
+                        value={mailFromEmail}
+                        onChange={e => setMailFromEmail(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</label>
+                    <input 
+                      className="login-input" 
+                      placeholder="Enter email subject..." 
+                      value={mailSubject}
+                      onChange={e => setMailSubject(e.target.value)}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email Content (HTML/Plain Text)</label>
+                    <textarea 
+                      className="login-input" 
+                      placeholder="Write your main content here..." 
+                      value={mailContent}
+                      onChange={e => setMailContent(e.target.value)}
+                      style={{ width: '100%', minHeight: '200px', resize: 'vertical', padding: '16px', lineHeight: '1.6', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                    />
+                    <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)', marginTop: '8px' }}>
+                      Tip: Basic newlines are preserved. Use \n for manual breaks if needed, or stick to simple text.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Signature</label>
+                    <input 
+                      className="login-input" 
+                      placeholder="Closing sign..." 
+                      value={mailSignature}
+                      onChange={e => setMailSignature(e.target.value)}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                    />
+                  </div>
+
+                  <button 
+                    onClick={handleSendCustomBatch}
+                    disabled={sendingCustom || recipients.length === 0}
+                    className="login-submit"
+                    style={{ marginTop: '12px', background: '#6366f1', color: '#fff', opacity: (sendingCustom || recipients.length === 0) ? 0.5 : 1 }}
+                  >
+                    {sendingCustom ? '⏳ Sending Batch...' : `🚀 Send to ${recipients.length || '...'} Recipients`}
+                  </button>
+                </div>
+
+                {sendingCustom && (
+                   <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)', borderRadius: '32px', display: 'grid', placeItems: 'center', zIndex: 10 }}>
+                     <div style={{ textAlign: 'center' }}>
+                       <div className="login-feature-icon" style={{ margin: '0 auto 16px', animation: 'pulse 2s infinite' }}>📧</div>
+                       <p style={{ color: '#fff', fontWeight: 600 }}>Processing Batch Delivery</p>
+                       <p className="muted" style={{ fontSize: '0.8rem' }}>Please do not close this tab</p>
+                     </div>
+                   </div>
+                )}
               </div>
             </div>
           </div>

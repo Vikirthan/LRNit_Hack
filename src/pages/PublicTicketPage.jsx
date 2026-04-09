@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
+import { useAuth } from '../context/AuthContext'
 import { verifyScanToken } from '../services/teamService'
 
 export default function PublicTicketPage() {
+  const { profile, logout } = useAuth()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
   const [team, setTeam] = useState(null)
@@ -106,6 +108,11 @@ export default function PublicTicketPage() {
              </div>
             <h1 style={{ fontSize: '2.5rem', fontWeight: '800', margin: '0 0 8px 0', background: 'linear-gradient(to bottom, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Digital Ticket</h1>
             <p className="muted" style={{ fontSize: '0.95rem' }}>Scan at the registration desk for entry</p>
+            {profile && (
+              <div style={{ marginTop: '16px' }}>
+                <button onClick={logout} className="login-tab" style={{ background: 'rgba(255,255,255,0.05)', padding: '6px 16px', fontSize: '0.8rem' }}>Sign Out ({profile.role})</button>
+              </div>
+            )}
           </header>
 
           <div style={{ 

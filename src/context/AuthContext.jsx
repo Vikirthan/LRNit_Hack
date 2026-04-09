@@ -138,9 +138,13 @@ export function AuthProvider({ children }) {
       },
       logout: async () => {
         clearStoredSession()
+        // Clear any other app-specific storage if necessary
+        window.localStorage.removeItem('ticketscan-teacher-scores')
         setUser(null)
         setProfile(null)
         setLoading(false)
+        // Force a page refresh to clear all in-memory state and replace history
+        window.location.replace('/login')
       },
     }),
     [loading, profile, user],

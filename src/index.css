@@ -1,5 +1,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@400;600;700&display=swap');
 
+/* Mobile Optimisation */
+@media (max-width: 768px) {
+  .teacher-hero { grid-template-columns: 1fr !important; gap: 24px !important; text-align: center; }
+  .teacher-workspace { grid-template-columns: 1fr !important; }
+  .teacher-summary-grid { grid-template-columns: 1fr !important; }
+  .criteria-grid { grid-template-columns: 1fr !important; }
+  .auth-shell { grid-template-columns: 1fr !important; }
+  .auth-hero { min-height: auto !important; padding: 40px 20px !important; }
+  .feature-grid { grid-template-columns: 1fr !important; }
+  .login-container { grid-template-columns: 1fr !important; padding: 10px !important; }
+  .admin-tabs { gap: 4px !important; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .admin-tabs button { padding: 10px 12px !important; font-size: 0.85rem !important; }
+  .sheet-table { font-size: 0.85rem !important; }
+  .score-ring { width: 150px !important; }
+  .score-ring strong { font-size: 2rem !important; }
+  h1 { font-size: 2.2rem !important; }
+  
+  /* Additional Admin & Volunteer Overrides */
+  .dashboard-stats { grid-template-columns: 1fr !important; }
+  .grid.two-col { grid-template-columns: 1fr !important; }
+  .layout.admin-layout, .layout.volunteer-workspace { padding: 12px !important; width: 100% !important; margin: 0 !important; }
+  .topbar { flex-direction: column !important; gap: 16px !important; align-items: flex-start !important; }
+  .topbar-actions { width: 100% !important; justify-content: space-between !important; }
+  .sheet-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .sheet-table th, .sheet-table td { min-width: 120px !important; padding: 12px !important; }
+  .login-auth-panel { padding: 20px !important; border-radius: 20px !important; width: 100% !important; }
+  .scanner-box { height: 320px !important; overflow: hidden; border-radius: 16px; margin: 0 auto; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+  .scanner-box video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
+  .login-page { place-items: flex-start center !important; overflow-y: auto !important; padding: 10px !important; }
+  .volunteer-page .login-auth-panel { margin-bottom: 40px; }
+}
+
 @import 'tailwindcss';
 
 :root {

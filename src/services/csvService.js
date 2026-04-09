@@ -65,3 +65,44 @@ function normalizeRows(rows) {
     }
   })
 }
+export async function parseRecipientFile(file) {
+  const extension = file.name.split('.').pop()?.toLowerCase()
+
+  if (extension === 'csv') {
+    const csvText = await file.text()
+    const { data } = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim().toLowerCase(),
+    })
+    return normalizeRecipients(data)
+  }
+
+  const buffer = await file.arrayBuffer()
+  const wb = XLSX.read(buffer)
+  const firstSheet = wb.Sheets[wb.SheetNames[0]]
+  const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' })
+  return normalizeRecipients(rows)
+}
+
+function normalizeRecipients(rows) {
+  const getFirst = (row, searchKeys) => {
+    const rowKeys = Object.keys(row)
+    for (const searchKey of searchKeys) {
+      const normalizedSearch = searchKey.toLowerCase().replace(/[\s_]/g, '')
+      for (const rowKey of rowKeys) {
+        const normalizedRowKey = rowKey.toLowerCase().replace(/[\s_]/g, '')
+        if (normalizedRowKey === normalizedSearch) {
+          const val = row[rowKey]
+          if (val !== undefined && val !== null && String(val).trim() !== '') return val
+        }
+      }
+    }
+    return ''
+  }
+
+  return rows.map((row) => ({
+    name: String(getFirst(row, ['name', 'fullname', 'recipient', 'user', 'contactname'])).trim(),
+    email: String(getFirst(row, ['email', 'gmail', 'mail', 'address', 'contactemail'])).trim(),
+  })).filter(r => r.email)
+}

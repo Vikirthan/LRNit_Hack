@@ -24,3 +24,8 @@ export async function sendTeamQrEmail(teamId, baseUrl) {
 export async function sendOverdueAlert(teamId, durationMin, overage) {
   return invokeFunction('send-overdue-alert', { teamId, durationMin, overage })
 }
+
+export async function sendCustomEmail(payload) {
+  // payload: { email, name, subject, content, signature }
+  return invokeFunction('send-custom-email', payload)
+}
