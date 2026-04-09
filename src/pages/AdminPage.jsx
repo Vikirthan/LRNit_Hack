@@ -8,8 +8,8 @@ import {
   getTeacherScores, 
   getRules, 
   saveRules as updateRules,
-  verifyTeamsInBackend,
   sendQrEmails,
+  sendAbsentAlert,
   getActivityLog,
   generateTeamQrToken,
   deleteTeamsBySource,
@@ -17,6 +17,7 @@ import {
 } from '../services/teamService'
 import { parseTeamFile, parseRecipientFile } from '../services/csvService'
 import { sendCustomEmail } from '../services/supabaseFunctions'
+import { supabase } from '../config/supabase'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 import { getPendingAccounts, getAllAccounts, approveAccount, rejectAccount, deleteAccount } from '../services/accountService'
@@ -49,21 +50,26 @@ export default function AdminPage() {
   const [mailFromEmail, setMailFromEmail] = useState('')
   const [mailFromName, setMailFromName] = useState('')
   const [sendingCustom, setSendingCustom] = useState(false)
+  const [scheduledAt, setScheduledAt] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
+  const [scheduledMails, setScheduledMails] = useState([])
 
   const refresh = async () => {
     try {
-      const [t, s, r, a, l] = await Promise.all([
+      const [t, s, r, a, l, sch] = await Promise.all([
         getTeams(),
         getTeacherScores(),
         getRules(),
         getAllAccounts(),
-        getActivityLog()
+        getActivityLog(),
+        supabase.from('scheduled_emails').select('*').order('scheduled_at', { ascending: true })
       ])
       setTeams(t)
       setTeacherScores(s)
       if (r) setRules(r)
       setAccounts(a)
       setLogs(l)
+      if (sch.data) setScheduledMails(sch.data)
     } catch (err) {
       console.error('Refresh error:', err)
     }
@@ -268,7 +274,43 @@ export default function AdminPage() {
       return
     }
 
-    if (!window.confirm(`Send custom email to ${recipients.length} recipients?`)) return
+    if (scheduledAt) {
+      const schDate = new Date(scheduledAt)
+      if (schDate < new Date()) {
+        alert("Scheduled time must be in the future.")
+        return
+      }
+
+      if (!window.confirm(`Schedule this email blast for ${schDate.toLocaleString()}?`)) return
+      
+      setSendingCustom(true)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { error } = await supabase.from('scheduled_emails').insert({
+          scheduled_at: scheduledAt,
+          subject: mailSubject,
+          content: mailContent,
+          signature: mailSignature,
+          recipients: recipients,
+          from_name: mailFromName,
+          from_email: mailFromEmail,
+          user_id: user?.id,
+          status: 'pending'
+        })
+        if (error) throw error
+        alert("✅ Email blast scheduled successfully!")
+        setScheduledAt('')
+        setRecipients([])
+        refresh()
+      } catch (err) {
+        alert("Scheduling failed: " + err.message)
+      } finally {
+        setSendingCustom(false)
+      }
+      return
+    }
+
+    if (!window.confirm(`Send custom email to ${recipients.length} recipients now?`)) return
 
     setSendingCustom(true)
     let success = 0
@@ -296,8 +338,25 @@ export default function AdminPage() {
         }
     }
 
+    alert(`Mailing Complete!\n✓ Success: ${success}\n✖ Failed: ${fail}`)
     setSendingCustom(false)
-    setStatus(`🏁 Mailing Complete. Success: ${success}, Failed: ${fail}.`)
+    setRecipients([])
+    refresh()
+  }
+
+  const deleteScheduledEmail = async (id) => {
+    if (!window.confirm("Cancel this scheduled mailing?")) return
+    try {
+      const { error } = await supabase.from('scheduled_emails').delete().eq('id', id)
+      if (error) throw error
+      refresh()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  const insertEmoji = (emoji) => {
+    setMailContent(prev => prev + emoji)
   }
 
   const downloadMailingTemplate = () => {
@@ -1009,16 +1068,12 @@ export default function AdminPage() {
             gap: '32px',
             animation: 'fadeIn 0.5s ease-out'
           }}>
-            {/* Left: List Management */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Left: List Management & Preview */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '0.8' }}>
               <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
                 <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span>📋</span> Recipient List
                 </h2>
-                <p className="muted" style={{ fontSize: '0.85rem', marginBottom: '24px' }}>
-                  Upload a separate CSV or Excel file containing <strong>Name</strong> and <strong>Email</strong>.
-                </p>
-                
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '12px', background: '#6366f1' }}>
                     📁 Choose List File
@@ -1035,104 +1090,133 @@ export default function AdminPage() {
                       <span style={{ color: '#4ade80', fontSize: '0.85rem', fontWeight: 600 }}>{recipients.length} Contacts Loaded</span>
                       <button onClick={() => setRecipients([])} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Clear</button>
                     </div>
-                    <div style={{ maxHeight: '300px', overflowY: 'auto', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.2)' }}>
-                      {recipients.map((r, i) => (
-                        <div key={i} style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                          <span style={{ color: '#fff' }}>{r.name || 'No Name'}</span>
-                          <span className="muted">{r.email}</span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
+              </div>
+
+              {/* Scheduled Mails List */}
+              <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
+                <h2 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '16px' }}>🕒 Scheduled Blasts ({scheduledMails.length})</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
+                  {scheduledMails.map(m => (
+                    <div key={m.id} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>{m.subject}</span>
+                        <button onClick={() => deleteScheduledEmail(m.id)} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                        <span style={{ color: '#60a5fa' }}>📅 {new Date(m.scheduled_at).toLocaleString()}</span>
+                        <span className="muted">👥 {m.recipients?.length || 0} users</span>
+                      </div>
+                    </div>
+                  ))}
+                  {scheduledMails.length === 0 && <p className="muted" style={{ textAlign: 'center', fontSize: '0.85rem', padding: '20px' }}>No active schedules</p>}
+                </div>
               </div>
             </div>
 
             {/* Right: Composer */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '1.2' }}>
               <div className="login-auth-panel" style={{ padding: '32px', position: 'relative' }}>
-                <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '24px' }}>✍️ Compose Message</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h2 style={{ fontSize: '1.4rem', color: '#fff', margin: 0 }}>✍️ Composer</h2>
+                  <button 
+                    onClick={() => setShowPreview(true)}
+                    style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.2)', padding: '8px 16px', borderRadius: '12px', fontSize: '0.85rem', cursor: 'pointer' }}
+                  >
+                    👁️ Preview Mail
+                  </button>
+                </div>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div>
-                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sender Name</label>
-                      <input 
-                        className="login-input" 
-                        placeholder="e.g. Aethera X Team" 
-                        value={mailFromName}
-                        onChange={e => setMailFromName(e.target.value)}
-                        style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Sender Name</label>
+                      <input className="login-input" placeholder="e.g. Aethera X Team" value={mailFromName} onChange={e => setMailFromName(e.target.value)} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sender Email</label>
-                      <input 
-                        className="login-input" 
-                        placeholder="e.g. info@aetherax.org" 
-                        value={mailFromEmail}
-                        onChange={e => setMailFromEmail(e.target.value)}
-                        style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Sender Email</label>
+                      <input className="login-input" placeholder="e.g. info@aetherax.org" value={mailFromEmail} onChange={e => setMailFromEmail(e.target.value)} />
                     </div>
                   </div>
                   <div>
-                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</label>
-                    <input 
-                      className="login-input" 
-                      placeholder="Enter email subject..." 
-                      value={mailSubject}
-                      onChange={e => setMailSubject(e.target.value)}
-                      style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                    />
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Subject Line</label>
+                    <input className="login-input" placeholder="Enter email subject..." value={mailSubject} onChange={e => setMailSubject(e.target.value)} />
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email Content (HTML/Plain Text)</label>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>
+                      Main Content
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {['🎉', '🚀', '⚠️', '🔥', '📍', '⭐'].map(e => (
+                          <button key={e} onClick={() => insertEmoji(e)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', opacity: 0.7 }}>{e}</button>
+                        ))}
+                      </div>
+                    </label>
                     <textarea 
                       className="login-input" 
-                      placeholder="Write your main content here..." 
+                      placeholder="Write your main content here... Use {{name}} to personalize." 
                       value={mailContent}
                       onChange={e => setMailContent(e.target.value)}
-                      style={{ width: '100%', minHeight: '200px', resize: 'vertical', padding: '16px', lineHeight: '1.6', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                    />
-                    <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)', marginTop: '8px' }}>
-                      Tip: Basic newlines are preserved. Use \n for manual breaks if needed, or stick to simple text.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Signature</label>
-                    <input 
-                      className="login-input" 
-                      placeholder="Closing sign..." 
-                      value={mailSignature}
-                      onChange={e => setMailSignature(e.target.value)}
-                      style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      style={{ width: '100%', minHeight: '220px', resize: 'vertical', padding: '16px', lineHeight: '1.6' }}
                     />
                   </div>
 
-                  <button 
-                    onClick={handleSendCustomBatch}
-                    disabled={sendingCustom || recipients.length === 0}
-                    className="login-submit"
-                    style={{ marginTop: '12px', background: '#6366f1', color: '#fff', opacity: (sendingCustom || recipients.length === 0) ? 0.5 : 1 }}
-                  >
-                    {sendingCustom ? '⏳ Sending Batch...' : `🚀 Send to ${recipients.length || '...'} Recipients`}
-                  </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Schedule (Optional)</label>
+                      <input 
+                        type="datetime-local" 
+                        className="login-input" 
+                        value={scheduledAt} 
+                        onChange={e => setScheduledAt(e.target.value)} 
+                        style={{ width: '100%', colorScheme: 'dark' }}
+                      />
+                    </div>
+                    <button 
+                      onClick={handleSendCustomBatch}
+                      disabled={sendingCustom || recipients.length === 0}
+                      className="login-submit"
+                      style={{ height: '52px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff' }}
+                    >
+                      {sendingCustom ? '⏳ Processing...' : scheduledAt ? `📅 Schedule for ${recipients.length} users` : `🚀 Blast to ${recipients.length || '...'} users`}
+                    </button>
+                  </div>
                 </div>
-
-                {sendingCustom && (
-                   <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)', borderRadius: '32px', display: 'grid', placeItems: 'center', zIndex: 10 }}>
-                     <div style={{ textAlign: 'center' }}>
-                       <div className="login-feature-icon" style={{ margin: '0 auto 16px', animation: 'pulse 2s infinite' }}>📧</div>
-                       <p style={{ color: '#fff', fontWeight: 600 }}>Processing Batch Delivery</p>
-                       <p className="muted" style={{ fontSize: '0.8rem' }}>Please do not close this tab</p>
-                     </div>
-                   </div>
-                )}
               </div>
             </div>
+
+            {/* Preview Modal */}
+            {showPreview && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: '20px' }}>
+                <div style={{ background: '#fff', width: 'min(650px, 100%)', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', animation: 'fadeIn 0.3s ease-out' }}>
+                   <div style={{ background: '#f8fafc', padding: '16px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, color: '#1e293b' }}>Email Master Preview</span>
+                      <button onClick={() => setShowPreview(false)} style={{ background: '#ef4444', color: '#fff', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}>✕</button>
+                   </div>
+                   <div style={{ padding: '32px', overflowY: 'auto', maxHeight: '70vh' }}>
+                      <div style={{ fontFamily: 'Segoe UI, sans-serif', maxWidth: '600px', margin: 'auto', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '30px' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                          <span style={{ fontSize: '3rem' }}>✉️</span>
+                        </div>
+                        <h1 style={{ color: '#1e293b', textAlign: 'center', fontSize: '24px', marginBottom: '20px' }}>{mailSubject || '(No Subject)'}</h1>
+                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '25px 0' }} />
+                        <p style={{ fontSize: '16px', color: '#334155', lineHeight: '1.6' }}>Hello <strong>[Participant Name]</strong>,</p>
+                        <div style={{ fontSize: '15px', color: '#475569', lineHeight: '1.8', margin: '20px 0', whiteSpace: 'pre-wrap' }}>
+                          {mailContent || '(Write content to see it here...)'}
+                        </div>
+                        <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '2px solid #f8fafc', color: '#64748b' }}>
+                          <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#1e293b' }}>Best Regards,</p>
+                          <p style={{ margin: '4px 0 0 0', fontStyle: 'italic' }}>{mailSignature}</p>
+                        </div>
+                      </div>
+                   </div>
+                   <div style={{ padding: '16px', textAlign: 'center', background: '#f8fafc', color: '#64748b', fontSize: '0.8rem' }}>
+                      Note: Personalization tags like [Participant Name] are replaced automatically during sending.
+                   </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
