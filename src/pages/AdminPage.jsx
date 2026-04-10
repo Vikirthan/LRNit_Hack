@@ -501,7 +501,7 @@ export default function AdminPage() {
 
         {activeTab === 'dashboard' && (
           <div className="stack" style={{ gap: '32px' }}>
-             <section className="dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+             <section className="dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
               <div className="login-feature-card" style={{ flexDirection: 'column', alignItems: 'flex-start', padding: '24px' }}>
                 <span className="summary-label" style={{ color: 'rgba(255,255,255,0.6)' }}>Total Teams</span>
                 <h2 style={{ fontSize: '2.4rem', color: '#fff', margin: '8px 0', fontWeight: 800 }}>{teams.length}</h2>
@@ -575,7 +575,7 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'teams' && (
-          <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: '0.8fr 1.2fr' }}>
+          <div className="grid two-col" style={{ gap: '32px' }}>
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Import Teams</h2>
               <div className="login-field">
@@ -644,7 +644,7 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
-              <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
                  <div className="login-feature-card" style={{ padding: '16px', flexDirection: 'column', alignItems: 'flex-start' }}>
                    <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Memory usage</span>
                    <strong style={{ color: '#fff' }}>Optimal</strong>
@@ -904,7 +904,7 @@ export default function AdminPage() {
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>Event Protocols</h2>
               <div className="stack" style={{ gap: '28px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                   <div className="login-field">
                     <label style={{ color: '#fff', marginBottom: '8px' }}>Max Break Time (Minutes)</label>
                     <div className="login-input-wrap">

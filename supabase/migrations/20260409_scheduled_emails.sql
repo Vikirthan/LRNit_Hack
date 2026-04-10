@@ -17,5 +17,6 @@ CREATE TABLE IF NOT EXISTS public.scheduled_emails (
 ALTER TABLE public.scheduled_emails ENABLE ROW LEVEL SECURITY;
 
 -- Allow admins to manage scheduled emails (Assuming 'admin' metadata or vikirthan check)
+DROP POLICY IF EXISTS "Admins can manage scheduled emails" ON public.scheduled_emails;
 CREATE POLICY "Admins can manage scheduled emails" ON public.scheduled_emails
     FOR ALL USING (true); -- Simplified for now, similar to teams logic
