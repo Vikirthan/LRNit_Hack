@@ -150,23 +150,39 @@ export default function AdminPage() {
       return
     }
 
-    if (!window.confirm(`Send "Report to Arena" alert to ${absent.length} absent teams?`)) return
+    const alertable = absent.filter(t => (t.team_emails?.length || 0) > 0)
+    const noEmails = absent.length - alertable.length
+
+    if (!window.confirm(`Send "Report to Arena" alert to ${alertable.length} absent teams?${noEmails > 0 ? `\n\nNote: ${noEmails} teams have no emails and will be skipped.` : ''}`)) return
     
-    setStatus(`📢 Alerting ${absent.length} absent teams...`)
+    setStatus(`📢 Alerting ${alertable.length} absent teams...`)
     let success = 0
     let fail = 0
 
-    for (const t of absent) {
+    for (const t of alertable) {
       try {
         setStatus(`📬 Alerting ${t.team_name}...`)
         const res = await sendAbsentAlert(t.team_id, window.location.origin)
-        if (res?.success) success++
-        else fail++
+        if (res?.success) {
+          success++
+          setStatus(`✅ Sent ${success}/${alertable.length}... (${t.team_id})`)
+        } else {
+          console.error(`Alert failed for ${t.team_id}:`, res?.error)
+          fail++
+          setStatus(`⚠️ FAILED ${t.team_id}: ${res?.error || 'Unknown error'}`)
+          await new Promise(r => setTimeout(r, 1000))
+        }
       } catch (err) {
+        console.error(`Alert error for ${t.team_id}:`, err)
         fail++
+        setStatus(`❌ ERROR ${t.team_id}: ${err.message}`)
+        await new Promise(r => setTimeout(r, 1000))
       }
     }
     setStatus(`✅ Alert Campaign Finished! Sent: ${success}, Failed: ${fail}`)
+    if (noEmails > 0) {
+      setStatus(prev => prev + ` (${noEmails} skipped - no emails)`)
+    }
   }
 
   const onGenerateAllTokens = async () => {

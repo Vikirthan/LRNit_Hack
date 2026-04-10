@@ -177,9 +177,7 @@ export default function LoginPage() {
               <div className="login-divider">
                 <span>Admin access</span>
               </div>
-              <p className="login-hint">
-                Admin login: <code>Vikirthan</code> / <code>Vikirthan@819</code>
-              </p>
+
             </form>
           ) : (
             <form className="login-form" onSubmit={onRequestAccount}>
