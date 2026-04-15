@@ -52,6 +52,7 @@ export default function TeacherPage() {
   const [pendingTeam, setPendingTeam] = useState(null)
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [filter, setFilter] = useState('')
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   const refreshTeams = async () => {
     try {
@@ -149,6 +150,7 @@ export default function TeacherPage() {
 
   const saveScore = async () => {
     try {
+      setShowSubmitConfirm(false)
       const teacherName = profile?.full_name || profile?.email || 'Teacher'
       await saveTeacherScore(team.team_id, scoreByCriterion, remarks, teacherName, profile?.id)
 
@@ -383,7 +385,7 @@ export default function TeacherPage() {
                 style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '16px', color: '#fff', fontSize: '1rem', outline: 'none', transition: 'all 0.3s ease' }}
               />
               <div style={{ display: 'flex', gap: '20px', marginTop: '32px' }}>
-                <button onClick={saveScore} className="login-submit" style={{ flex: 2, padding: '16px' }}>Submit Evaluation</button>
+                <button onClick={() => setShowSubmitConfirm(true)} className="login-submit" style={{ flex: 2, padding: '16px' }}>Submit Evaluation</button>
                 <button onClick={() => { setScoreByCriterion(buildEmptyScores()); setRemarks('') }} className="login-tab" style={{ flex: 1, background: 'rgba(255, 255, 255, 0.04)', color: '#fff' }}>Clear Draft</button>
               </div>
             </div>
@@ -422,6 +424,54 @@ export default function TeacherPage() {
                   style={{ opacity: isConfirmed ? 1 : 0.5, background: isConfirmed ? 'linear-gradient(135deg, #fbbf24, #d97706)' : 'rgba(59,130,246,0.1)' }}
                 >
                   Confirm & Evaluate
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Submission Confirmation Modal */}
+        {showSubmitConfirm && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.85)', padding: '20px', backdropFilter: 'blur(8px)' }}>
+            <div className="login-auth-panel" style={{ width: 'min(550px, 100%)', padding: '36px', background: 'linear-gradient(135deg, rgba(20, 24, 40, 0.98), rgba(30, 41, 59, 0.98))', border: '1px solid rgba(96, 165, 250, 0.4)', boxShadow: '0 20px 80px rgba(0,0,0,0.8)', borderRadius: '32px' }}>
+              <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+                <div style={{ margin: '0 auto 16px', width: '70px', height: '70px', borderRadius: '20px', background: 'rgba(96, 165, 250, 0.15)', color: '#60a5fa', display: 'grid', placeItems: 'center', fontSize: '2rem' }}>📊</div>
+                <h2 style={{ color: '#fff', fontSize: '1.8rem', fontWeight: 800, margin: 0 }}>Review Submission</h2>
+                <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '8px' }}>Final score summary for <strong>{team.team_name}</strong></p>
+              </div>
+
+              <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '28px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px 24px' }}>
+                  {TEACHER_CRITERIA.map(crit => (
+                    <div key={crit.key} style={{ display: 'contents' }}>
+                      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>{crit.label}</span>
+                      <strong style={{ color: '#fff', fontSize: '0.95rem', textAlign: 'right' }}>{scoreByCriterion[crit.key]} / {crit.max}</strong>
+                    </div>
+                  ))}
+                  <div style={{ gridColumn: '1 / span 2', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '8px 0' }} />
+                  <span style={{ color: '#60a5fa', fontSize: '1.2rem', fontWeight: 800 }}>TOTAL SCORE</span>
+                  <strong style={{ color: '#60a5fa', fontSize: '1.4rem', fontWeight: 800, textAlign: 'right' }}>{total} / {TEACHER_CRITERIA_TOTAL}</strong>
+                </div>
+              </div>
+
+              {remarks && (
+                <div style={{ marginBottom: '28px' }}>
+                  <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>Remarks</p>
+                  <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.95rem', fontStyle: 'italic', background: 'rgba(255,255,255,0.03)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    "{remarks}"
+                  </p>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px' }}>
+                <button onClick={() => setShowSubmitConfirm(false)} className="login-tab" style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  Back to Editor
+                </button>
+                <button 
+                  onClick={saveScore} 
+                  className="login-submit" 
+                  style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', boxShadow: '0 8px 30px rgba(59, 130, 246, 0.4)' }}
+                >
+                  Final Jury Approval
                 </button>
               </div>
             </div>
