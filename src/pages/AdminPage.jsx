@@ -13,7 +13,8 @@ import {
   getActivityLog,
   generateTeamQrToken,
   deleteTeamsBySource,
-  verifyScanToken
+  verifyScanToken,
+  subscribeToRules
 } from '../services/teamService'
 import { parseTeamFile, parseRecipientFile } from '../services/csvService'
 import { sendCustomEmail } from '../services/supabaseFunctions'
@@ -33,7 +34,8 @@ export default function AdminPage() {
     max_break_time: 15, 
     grace_time: 5, 
     penalty_per_unit: 10,
-    is_active: true 
+    is_active: true,
+    jury_mode: 'manual'
   })
   const [logs, setLogs] = useState([])
   const [accounts, setAccounts] = useState([])
@@ -51,8 +53,8 @@ export default function AdminPage() {
   const [mailFromName, setMailFromName] = useState('')
   const [sendingCustom, setSendingCustom] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
-  const [showPreview, setShowPreview] = useState(false)
   const [scheduledMails, setScheduledMails] = useState([])
+  const [teamFilter, setTeamFilter] = useState('')
 
   const refresh = async () => {
     try {
@@ -78,8 +80,37 @@ export default function AdminPage() {
   useEffect(() => {
     refresh()
     const unsub = subscribeToTeams(refresh)
-    return () => unsub()
+    const unsubRules = subscribeToRules((newRules) => {
+      if (newRules) setRules(newRules)
+    })
+
+    // Load Draft
+    const saved = localStorage.getItem('mail_draft')
+    if (saved) {
+      const d = JSON.parse(saved)
+      setMailSubject(d.subject || '')
+      setMailContent(d.content || '')
+      setMailSignature(d.signature || 'Aethera X Organizing Team')
+      setMailFromName(d.fromName || '')
+      setMailFromEmail(d.fromEmail || '')
+    }
+
+    return () => {
+      unsub()
+      unsubRules()
+    }
   }, [])
+
+  // Auto-save Draft
+  useEffect(() => {
+    localStorage.setItem('mail_draft', JSON.stringify({
+      subject: mailSubject,
+      content: mailContent,
+      signature: mailSignature,
+      fromName: mailFromName,
+      fromEmail: mailFromEmail
+    }))
+  }, [mailSubject, mailContent, mailSignature, mailFromName, mailFromEmail])
 
   const onImport = async (e) => {
     const file = e.target.files?.[0]
@@ -310,6 +341,7 @@ export default function AdminPage() {
           recipients: recipients,
           from_name: mailFromName,
           from_email: mailFromEmail,
+          event_logo_url: rules.event_logo_url,
           user_id: user?.id,
           status: 'pending'
         })
@@ -344,7 +376,8 @@ export default function AdminPage() {
                 content: mailContent,
                 signature: mailSignature,
                 fromEmail: mailFromEmail,
-                fromName: mailFromName
+                fromName: mailFromName,
+                eventLogoUrl: rules.event_logo_url
             })
             if (res?.success) success++
             else throw new Error(res?.error || "Unknown error")
@@ -460,6 +493,10 @@ export default function AdminPage() {
   }
 
   const activeOut = teams.filter(t => t.active_out)
+  const filteredTeams = teams.filter(t => 
+    t.team_name.toLowerCase().includes(teamFilter.toLowerCase()) || 
+    t.team_id.toLowerCase().includes(teamFilter.toLowerCase())
+  )
 
   return (
     <div className="login-page">
@@ -535,7 +572,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-             <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: '1fr 1fr' }}>
+             <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))' }}>
               <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center' }}>
                   <h2 style={{ color: '#fff', fontSize: '1.3rem', fontWeight: 700 }}>Penalty Leaderboard</h2>
@@ -591,7 +628,7 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'teams' && (
-          <div className="grid two-col" style={{ gap: '32px' }}>
+          <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))' }}>
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Import Teams</h2>
               <div className="login-field">
@@ -660,7 +697,7 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
-              <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
+              <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '16px' }}>
                  <div className="login-feature-card" style={{ padding: '16px', flexDirection: 'column', alignItems: 'flex-start' }}>
                    <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Memory usage</span>
                    <strong style={{ color: '#fff' }}>Optimal</strong>
@@ -676,7 +713,7 @@ export default function AdminPage() {
                <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Data Sources Management</h2>
                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem', marginBottom: '20px' }}>List of imported files and their teams</p>
                
-               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                  {[...new Set(teams.map(t => t.source_file || 'Manually Added / Legacy'))].map(source => {
                    const teamCount = teams.filter(t => (t.source_file === source || (!t.source_file && source === 'Manually Added / Legacy'))).length
                    return (
@@ -711,12 +748,23 @@ export default function AdminPage() {
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', gridColumn: 'span 2' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Master Team List ({teams.length})</h2>
-                <button 
-                  onClick={() => setScanOpen(!scanOpen)} 
-                  style={{ background: scanOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: scanOpen ? '#f87171' : '#818cf8', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}
-                >
-                  {scanOpen ? 'Close Scanner' : '📷 Scan Failsafe'}
-                </button>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div className="login-input-wrap" style={{ width: '250px', background: 'rgba(0,0,0,0.2)' }}>
+                    <span className="login-input-icon">🔍</span>
+                    <input 
+                      placeholder="Search ID or Name..." 
+                      value={teamFilter}
+                      onChange={(e) => setTeamFilter(e.target.value)}
+                      style={{ background: 'transparent', border: 'none', color: '#fff', padding: '8px' }}
+                    />
+                  </div>
+                  <button 
+                    onClick={() => setScanOpen(!scanOpen)} 
+                    style={{ background: scanOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: scanOpen ? '#f87171' : '#818cf8', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    {scanOpen ? 'Close Scanner' : '📷 Scan Failsafe'}
+                  </button>
+                </div>
               </div>
 
               {scanOpen && (
@@ -737,7 +785,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {teams.map((t) => (
+                    {filteredTeams.map((t) => (
                       <tr key={t.team_id} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                         <td style={{ padding: '16px', color: '#60a5fa', fontWeight: 800 }}>{t.team_id}</td>
                         <td style={{ padding: '16px', color: '#fff' }}><strong>{t.team_name}</strong></td>
@@ -803,8 +851,48 @@ export default function AdminPage() {
         {activeTab === 'judge' && (
           <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px', alignItems: 'center' }}>
-              <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700 }}>Scoring Mastery Matrix</h2>
-              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 250, 0.2)', color: '#60a5fa' }}>📥 Download Detailed Sheet</button>
+              <div>
+                <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, margin: 0 }}>Scoring Mastery Matrix</h2>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button 
+                    onClick={() => { 
+                      const next = { ...rules, jury_mode: 'manual' }
+                      setRules(next)
+                      updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() })
+                    }}
+                    style={{ 
+                      padding: '4px 12px', 
+                      fontSize: '0.75rem', 
+                      borderRadius: '8px', 
+                      background: rules.jury_mode === 'manual' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
+                      color: rules.jury_mode === 'manual' ? '#818cf8' : 'rgba(255,255,255,0.3)',
+                      border: '1px solid ' + (rules.jury_mode === 'manual' ? 'rgba(99, 102, 241, 0.3)' : 'transparent'),
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Manual Mode
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const next = { ...rules, jury_mode: 'scan' }
+                      setRules(next)
+                      updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() })
+                    }}
+                    style={{ 
+                      padding: '4px 12px', 
+                      fontSize: '0.75rem', 
+                      borderRadius: '8px', 
+                      background: rules.jury_mode === 'scan' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
+                      color: rules.jury_mode === 'scan' ? '#818cf8' : 'rgba(255,255,255,0.3)',
+                      border: '1px solid ' + (rules.jury_mode === 'scan' ? 'rgba(99, 102, 241, 0.3)' : 'transparent'),
+                      cursor: 'pointer'
+                    }}
+                  >
+                    QR Scan Only
+                  </button>
+                </div>
+              </div>
+              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 240, 0.2)', color: '#60a5fa' }}>📥 Download Detailed Sheet</button>
             </div>
             
             <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
@@ -939,14 +1027,22 @@ export default function AdminPage() {
                   <label style={{ color: '#fff', marginBottom: '16px', display: 'block' }}>Jury Scoring Mode</label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <button 
-                      onClick={() => updateRules({ ...rules, jury_mode: 'manual' }).then(() => { setStatus('Switching to Manual List mode...'); refresh() })}
+                      onClick={() => {
+                        const next = { ...rules, jury_mode: 'manual' }
+                        setRules(next)
+                        updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() })
+                      }}
                       className={`login-submit ${rules.jury_mode === 'manual' ? '' : 'secondary'}`}
                       style={{ padding: '12px', fontSize: '0.9rem', background: rules.jury_mode === 'manual' ? '#6366f1' : 'rgba(255,255,255,0.05)', color: rules.jury_mode === 'manual' ? '#fff' : 'rgba(255,255,255,0.4)', opacity: 1 }}
                     >
                       {rules.jury_mode === 'manual' && '● '} Manual List
                     </button>
                     <button 
-                      onClick={() => updateRules({ ...rules, jury_mode: 'scan' }).then(() => { setStatus('Switching to QR Scan mode...'); refresh() })}
+                      onClick={() => {
+                        const next = { ...rules, jury_mode: 'scan' }
+                        setRules(next)
+                        updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() })
+                      }}
                       className={`login-submit ${rules.jury_mode === 'scan' ? '' : 'secondary'}`}
                       style={{ padding: '12px', fontSize: '0.9rem', background: rules.jury_mode === 'scan' ? '#6366f1' : 'rgba(255,255,255,0.05)', color: rules.jury_mode === 'scan' ? '#fff' : 'rgba(255,255,255,0.4)', opacity: 1 }}
                     >
@@ -1079,13 +1175,14 @@ export default function AdminPage() {
 
         {activeTab === 'mailing' && (
           <div className="mailing-center" style={{ 
-            display: 'flex', 
-            flexDirection: window.innerWidth < 1024 ? 'column' : 'row', 
-            gap: '32px',
-            animation: 'fadeIn 0.5s ease-out'
+            display: 'grid', 
+            gridTemplateColumns: 'minmax(280px, 0.6fr) minmax(400px, 1fr) minmax(400px, 0.9fr)', 
+            gap: '24px',
+            animation: 'fadeIn 0.5s ease-out',
+            alignItems: 'start'
           }}>
             {/* Left: List Management & Preview */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '0.8' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '1 1 300px' }}>
               <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
                 <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span>📋</span> Recipient List
@@ -1131,108 +1228,209 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Right: Composer */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '1.2' }}>
-              <div className="login-auth-panel" style={{ padding: '32px', position: 'relative' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <h2 style={{ fontSize: '1.4rem', color: '#fff', margin: 0 }}>✍️ Composer</h2>
-                  <button 
-                    onClick={() => setShowPreview(true)}
-                    style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.2)', padding: '8px 16px', borderRadius: '12px', fontSize: '0.85rem', cursor: 'pointer' }}
-                  >
-                    👁️ Preview Mail
-                  </button>
+            {/* Middle: Composer */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div className="login-auth-panel" style={{ padding: '28px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h2 style={{ fontSize: '1.2rem', color: '#fff', margin: 0 }}>✍️ Creator Studio</h2>
+                  <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Draft Auto-saved locally</span>
                 </div>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Sender Name</label>
-                      <input className="login-input" placeholder="e.g. Aethera X Team" value={mailFromName} onChange={e => setMailFromName(e.target.value)} />
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>From Name</label>
+                      <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px' }} placeholder="e.g. LRNit Team" value={mailFromName} onChange={e => setMailFromName(e.target.value)} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Sender Email</label>
-                      <input className="login-input" placeholder="e.g. info@aetherax.org" value={mailFromEmail} onChange={e => setMailFromEmail(e.target.value)} />
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>Reply-to Email</label>
+                      <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px' }} placeholder="e.g. admin@lrnit.in" value={mailFromEmail} onChange={e => setMailFromEmail(e.target.value)} />
                     </div>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Subject Line</label>
-                    <input className="login-input" placeholder="Enter email subject..." value={mailSubject} onChange={e => setMailSubject(e.target.value)} />
                   </div>
 
                   <div>
-                    <label style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>
-                      Main Content
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        {['🎉', '🚀', '⚠️', '🔥', '📍', '⭐'].map(e => (
-                          <button key={e} onClick={() => insertEmoji(e)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', opacity: 0.7 }}>{e}</button>
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>Mail Subject</label>
+                    <input className="login-input" style={{ fontSize: '0.9rem', padding: '12px' }} placeholder="Enter email subject..." value={mailSubject} onChange={e => setMailSubject(e.target.value)} />
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '16px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {/* Toolbar inspired by Unstop */}
+                    <div style={{ display: 'flex', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {['B', 'I', 'U'].map(btn => (
+                           <button key={btn} style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', fontWeight: btn === 'B' ? 800 : 400, fontStyle: btn === 'I' ? 'italic' : 'normal', textDecoration: btn === 'U' ? 'underline' : 'none', cursor: 'pointer' }}>{btn}</button>
                         ))}
                       </div>
-                    </label>
+                      <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {['🎉', '🚀', '⭐', '📍'].map(emoji => (
+                          <button key={emoji} onClick={() => insertEmoji(emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}>{emoji}</button>
+                        ))}
+                      </div>
+                      <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                      <select style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: 'none', fontSize: '0.75rem', borderRadius: '4px', padding: '0 4px' }}>
+                        <option>12pt</option>
+                        <option>14pt</option>
+                        <option>16pt</option>
+                      </select>
+                    </div>
+
                     <textarea 
                       className="login-input" 
                       placeholder="Write your main content here... Use {{name}} to personalize." 
                       value={mailContent}
                       onChange={e => setMailContent(e.target.value)}
-                      style={{ width: '100%', minHeight: '220px', resize: 'vertical', padding: '16px', lineHeight: '1.6' }}
+                      style={{ width: '100%', minHeight: '300px', resize: 'vertical', padding: '12px', lineHeight: '1.6', background: 'transparent', border: 'none', color: '#fff', outline: 'none' }}
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'end' }}>
-                    <div>
-                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', marginBottom: '8px' }}>Schedule (Optional)</label>
-                      <input 
-                        type="datetime-local" 
-                        className="login-input" 
-                        value={scheduledAt} 
-                        onChange={e => setScheduledAt(e.target.value)} 
-                        style={{ width: '100%', colorScheme: 'dark' }}
-                      />
+                  {/* Regards / Signature Editor */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Regards & Professional Signature</label>
+                      <button onClick={() => setMailSignature(`Best Regards,\nLRNit Team`)} style={{ background: 'none', border: 'none', color: '#60a5fa', fontSize: '0.7rem', cursor: 'pointer' }}>Reset to Default</button>
                     </div>
-                    <button 
-                      onClick={handleSendCustomBatch}
-                      disabled={sendingCustom || recipients.length === 0}
-                      className="login-submit"
-                      style={{ height: '52px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff' }}
-                    >
-                      {sendingCustom ? '⏳ Processing...' : scheduledAt ? `📅 Schedule for ${recipients.length} users` : `🚀 Blast to ${recipients.length || '...'} users`}
-                    </button>
+                    <textarea 
+                      className="login-input" 
+                      placeholder="Enter your professional signature..."
+                      value={mailSignature}
+                      onChange={e => setMailSignature(e.target.value)}
+                      rows={3}
+                      style={{ width: '100%', fontSize: '0.85rem', padding: '12px', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
+                    />
                   </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: '12px', alignItems: 'end' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Event Branding</label>
+                      <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        🖼️ Change Logo
+                        <input type="file" hidden accept="image/*" onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setStatus('Uploading logo...')
+                          try {
+                            const { data, error } = await supabase.storage.from('branding').upload(`logo_${Date.now()}_${file.name}`, file)
+                            if (error) throw error
+                            const { data: { publicUrl } } = supabase.storage.from('branding').getPublicUrl(data.path)
+                            await updateRules({ ...rules, event_logo_url: publicUrl })
+                            setStatus('✓ Logo updated successfully!')
+                            refresh()
+                          } catch (err) {
+                            setStatus(`Upload failed: ${err.message}`)
+                          }
+                        }} />
+                      </label>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>Schedule (Optional)</label>
+                      <div className="login-input-wrap" style={{ background: 'rgba(0,0,0,0.4)', padding: '2px' }}>
+                        <input 
+                          type="datetime-local" 
+                          className="login-input" 
+                          value={scheduledAt} 
+                          onChange={e => setScheduledAt(e.target.value)} 
+                          style={{ 
+                            width: '100%', 
+                            colorScheme: 'dark', 
+                            padding: '10px', 
+                            fontSize: '0.85rem', 
+                            background: 'transparent', 
+                            border: 'none',
+                            color: '#fff',
+                            fontWeight: 600
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleSendCustomBatch}
+                    disabled={sendingCustom || recipients.length === 0}
+                    className="login-submit"
+                    style={{ height: '46px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff', padding: '0 24px', fontSize: '0.9rem', marginTop: '12px' }}
+                  >
+                    {sendingCustom ? '⏳ Sending...' : scheduledAt ? `Schedule Campaign` : `🚀 Blast to Recipients`}
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Preview Modal */}
-            {showPreview && (
-              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: '20px' }}>
-                <div style={{ background: '#fff', width: 'min(650px, 100%)', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', animation: 'fadeIn 0.3s ease-out' }}>
-                   <div style={{ background: '#f8fafc', padding: '16px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, color: '#1e293b' }}>Email Master Preview</span>
-                      <button onClick={() => setShowPreview(false)} style={{ background: '#ef4444', color: '#fff', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}>✕</button>
-                   </div>
-                   <div style={{ padding: '32px', overflowY: 'auto', maxHeight: '70vh' }}>
-                      <div style={{ fontFamily: 'Segoe UI, sans-serif', maxWidth: '600px', margin: 'auto', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '30px' }}>
-                        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                          <span style={{ fontSize: '3rem' }}>✉️</span>
+            {/* Right: Unstop-style Live Preview */}
+            <div style={{ position: 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+               <div style={{ background: '#f8fafc', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', animation: 'fadeIn 0.5s ease-out' }}>
+                  {/* Browser-like navigation bar */}
+                  <div style={{ background: '#fff', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                       {[1, 2, 3].map(i => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i===1 ? '#f87171' : i===2 ? '#fbbf24' : '#4ade80' }} />)}
+                    </div>
+                    <div style={{ flex: 1, background: '#f1f5f9', borderRadius: '6px', height: '24px', display: 'flex', alignItems: 'center', padding: '0 12px', color: '#64748b', fontSize: '0.7rem' }}>
+                      preview.lrnit.in/mail-view
+                    </div>
+                  </div>
+
+                  {/* The Email Wrapper */}
+                  <div style={{ padding: '24px', background: '#e2e8f0', minHeight: '500px', display: 'flex', justifyContent: 'center' }}>
+                     <div style={{ background: '#fff', width: '100%', maxWidth: '500px', borderRadius: '4px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                        {/* Email Banner Header */}
+                        <div style={{ background: '#1e293b', padding: '32px 24px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                             {/* Fixed LRNit Branding */}
+                             <h2 style={{ color: '#fff', margin: 0, fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
+                               LRN<span style={{ color: '#60a5fa' }}>it</span>
+                             </h2>
+                             <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 800 }}>Learn · Build · Lead</div>
+                             
+                             {/* Optional Event Logo Below */}
+                             {rules.event_logo_url && (
+                               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                                 <img src={rules.event_logo_url} alt="Event Logo" style={{ height: '40px', maxWidth: '180px', objectFit: 'contain' }} />
+                               </div>
+                             )}
+                          </div>
                         </div>
-                        <h1 style={{ color: '#1e293b', textAlign: 'center', fontSize: '24px', marginBottom: '20px' }}>{mailSubject || '(No Subject)'}</h1>
-                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '25px 0' }} />
-                        <p style={{ fontSize: '16px', color: '#334155', lineHeight: '1.6' }}>Hello <strong>[Participant Name]</strong>,</p>
-                        <div style={{ fontSize: '15px', color: '#475569', lineHeight: '1.8', margin: '20px 0', whiteSpace: 'pre-wrap' }}>
-                          {mailContent || '(Write content to see it here...)'}
+
+                        {/* Email Body */}
+                        <div style={{ padding: '32px 24px', fontFamily: 'Inter, Segoe UI, sans-serif' }}>
+                           <h1 style={{ color: '#111827', fontSize: '1.25rem', fontWeight: 700, marginBottom: '20px' }}>{mailSubject || '(No Subject)'}</h1>
+                           <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 20px 0' }}>Hi <strong>[Participant Name]</strong>,</p>
+                           <div style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                             {mailContent || 'Start writing your message in the composer to see the live preview here...'}
+                           </div>
+                            <div style={{ marginTop: '32px', borderTop: '1px solid #f3f4f6', paddingTop: '24px' }}>
+                               <div style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                                 {mailSignature || `Best Regards,\n${mailFromName || 'LRNit Team'}`}
+                               </div>
+                               {rules.event_logo_url && (
+                                 <img 
+                                   src={rules.event_logo_url} 
+                                   alt="Signature Logo" 
+                                   style={{ height: '32px', marginTop: '12px', opacity: 0.8, filter: 'grayscale(0.2)' }} 
+                                 />
+                               )}
+                            </div>
                         </div>
-                        <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '2px solid #f8fafc', color: '#64748b' }}>
-                          <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#1e293b' }}>Best Regards,</p>
-                          <p style={{ margin: '4px 0 0 0', fontStyle: 'italic' }}>{mailSignature}</p>
+
+                        {/* Email Footer Banner */}
+                        <div style={{ background: '#f8fafc', padding: '32px 24px', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                             <div style={{ marginBottom: '12px' }}>
+                                <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
+                                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#3b82f6', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 900, fontSize: '1.1rem' }}>L</div>
+                                </div>
+                                <strong style={{ color: '#1e293b', fontSize: '0.9rem', display: 'block' }}>LRNit Mailing Platform</strong>
+                                <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '4px', lineHeight: '1.4' }}>Join our community of builders.</div>
+                             </div>
+                          </div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.65rem', marginTop: '24px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>© 2026 LRNit . All rights reserved</div>
                         </div>
-                      </div>
-                   </div>
-                   <div style={{ padding: '16px', textAlign: 'center', background: '#f8fafc', color: '#64748b', fontSize: '0.8rem' }}>
-                      Note: Personalization tags like [Participant Name] are replaced automatically during sending.
-                   </div>
-                </div>
-              </div>
-            )}
+                     </div>
+                  </div>
+               </div>
+               <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem', marginTop: '16px' }}>
+                 This is how the email will look in your participants' inbox.
+               </p>
+            </div>
           </div>
         )}
       </main>

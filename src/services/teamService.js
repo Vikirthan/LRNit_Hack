@@ -10,6 +10,8 @@ const defaultRules = {
   penalty_per_minute: 1,
   overdue_email_enabled: false,
   jury_mode: 'manual', // 'manual' or 'scan'
+  is_active: true,
+  event_logo_url: null,
 }
 
 function readLocalTeams() {
@@ -55,19 +57,53 @@ function mergeLocalTeam(team) {
   return nextTeam
 }
 
-export async function getRules() {
-  if (!hasSupabaseConfig || !supabase) return defaultRules
+const LOCAL_RULES_KEY = 'ticketscan-local-rules'
 
-  const { data, error } = await supabase.from('settings').select('*').eq('key', 'rules').maybeSingle()
-  if (error) throw error
-  return data ? { ...defaultRules, ...data } : defaultRules
+function readLocalRules() {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_RULES_KEY)
+    return raw ? { ...defaultRules, ...JSON.parse(raw) } : { ...defaultRules }
+  } catch {
+    return { ...defaultRules }
+  }
+}
+
+function writeLocalRules(rules) {
+  try {
+    window.localStorage.setItem(LOCAL_RULES_KEY, JSON.stringify(rules))
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+export async function getRules() {
+  if (!hasSupabaseConfig || !supabase) return readLocalRules()
+
+  try {
+    const { data, error } = await supabase.from('settings').select('*').eq('key', 'rules').maybeSingle()
+    if (error) throw error
+    const merged = data ? { ...defaultRules, ...data } : { ...defaultRules }
+    writeLocalRules(merged) // cache locally
+    return merged
+  } catch (err) {
+    console.warn('getRules: Supabase failed, falling back to local', err)
+    return readLocalRules()
+  }
 }
 
 export async function saveRules(payload) {
-  if (!supabase) throw new Error('Supabase is not configured yet')
+  // Always update locally for instant UI feedback
+  const merged = { ...readLocalRules(), ...payload }
+  writeLocalRules(merged)
 
-  const { error } = await supabase.from('settings').upsert({ key: 'rules', ...payload, updated_at: new Date().toISOString() })
-  if (error) throw error
+  if (!hasSupabaseConfig || !supabase) return
+
+  try {
+    const { error } = await supabase.from('settings').upsert({ key: 'rules', ...payload, updated_at: new Date().toISOString() })
+    if (error) throw error
+  } catch (err) {
+    console.warn('saveRules: Supabase failed, rules saved locally only', err)
+  }
 }
 
 export async function upsertTeam(team) {
@@ -469,6 +505,21 @@ export function subscribeToTeams(onUpdate) {
     .subscribe()
 
   // Return unsubscribe function
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToRules(onUpdate) {
+  if (!supabase) return () => {}
+
+  const channel = supabase
+    .channel('public:settings')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.rules' }, async (payload) => {
+      onUpdate(payload.new)
+    })
+    .subscribe()
+
   return () => {
     supabase.removeChannel(channel)
   }

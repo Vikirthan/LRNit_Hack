@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
 import { TEACHER_CRITERIA, TEACHER_CRITERIA_TOTAL } from '../constants/teacherCriteria'
-import { getTeams, saveTeacherScore, subscribeToTeams, verifyScanToken, getRules } from '../services/teamService'
+import { getTeams, saveTeacherScore, subscribeToTeams, verifyScanToken, getRules, subscribeToRules } from '../services/teamService'
 import QrScanner from '../components/QrScanner'
 
 const STORAGE_KEY = 'ticketscan-teacher-scores'
@@ -51,6 +51,7 @@ export default function TeacherPage() {
   const [scanOpen, setScanOpen] = useState(false)
   const [pendingTeam, setPendingTeam] = useState(null)
   const [isConfirmed, setIsConfirmed] = useState(false)
+  const [filter, setFilter] = useState('')
 
   const refreshTeams = async () => {
     try {
@@ -108,8 +109,20 @@ export default function TeacherPage() {
       setTeams(updatedTeams)
       setTeam((prev) => updatedTeams.find((item) => item.team_id === prev.team_id) || updatedTeams[0])
     })
-    return () => unsubscribe()
+    const unsubRules = subscribeToRules((newRules) => {
+      if (newRules) setRules(newRules)
+    })
+    return () => {
+      unsubscribe()
+      unsubRules()
+    }
   }, [])
+
+  const filteredTeams = useMemo(() => {
+    if (!filter.trim()) return teams
+    const q = filter.toLowerCase().trim()
+    return teams.filter(t => t.team_name.toLowerCase().includes(q) || t.team_id.toLowerCase().includes(q))
+  }, [teams, filter])
 
   useEffect(() => {
     const current = savedScores[team.team_id]
@@ -230,13 +243,15 @@ export default function TeacherPage() {
             <div className="panel-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                <h2 style={{ color: '#fff', fontSize: '1.3rem', fontWeight: 700 }}>Team Explorer</h2>
                <div style={{ display: 'flex', gap: '8px' }}>
-                 <button 
-                   onClick={() => setScanOpen(!scanOpen)} 
-                   className="login-tab active" 
-                   style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px', background: scanOpen ? '#f87171' : '#6366f1' }}
-                 >
-                   {scanOpen ? 'Close Scan' : '📷 QR Scan'}
-                 </button>
+                 {rules.jury_mode === 'manual' && (
+                   <button 
+                     onClick={() => setScanOpen(!scanOpen)} 
+                     className="login-tab active" 
+                     style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px', background: scanOpen ? '#f87171' : '#6366f1' }}
+                   >
+                     {scanOpen ? 'Close Scan' : '📷 QR Scan'}
+                   </button>
+                 )}
                  <button onClick={refreshTeams} disabled={loading} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px' }}>
                    {loading ? '...' : 'Refresh'}
                  </button>
@@ -251,7 +266,20 @@ export default function TeacherPage() {
             )}
 
             {rules.jury_mode === 'manual' ? (
-              <div className="sheet-wrap" style={{ maxHeight: '600px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' }}>
+              <>
+                <div className="login-field" style={{ marginBottom: '20px' }}>
+                  <div className="login-input-wrap" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                    <span className="login-input-icon">🔍</span>
+                    <input 
+                      placeholder="Filter teams..." 
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                      style={{ background: 'transparent', border: 'none', color: '#fff', width: '100%', padding: '10px' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="sheet-wrap" style={{ maxHeight: '600px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowY: 'auto' }}>
                 <table className="sheet-table">
                   <thead>
                     <tr>
@@ -260,7 +288,7 @@ export default function TeacherPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {teams.map((t) => {
+                    {filteredTeams.map((t) => {
                       const active = t.team_id === team.team_id
                       const isPending = t.team_id === pendingTeam?.team_id
                       return (
@@ -278,6 +306,7 @@ export default function TeacherPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             ) : (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>

@@ -10,7 +10,7 @@ export default function VolunteerPage() {
   const [team, setTeam] = useState(null)
   const [message, setMessage] = useState('Scan a QR code to load team details.')
   const [search, setSearch] = useState('')
-  const [searchResults, setSearchResults] = useState([])
+  const [teams, setTeams] = useState([])
   const [searching, setSearching] = useState(false)
   const [mode, setMode] = useState('attendance') // 'attendance' | 'movement'
   const [processing, setProcessing] = useState(false)
@@ -22,7 +22,7 @@ export default function VolunteerPage() {
   useEffect(() => {
     const loadTeams = async () => {
       const items = await getTeams()
-      setSearchResults(items)
+      setTeams(items)
     }
 
     loadTeams().catch(() => undefined)
@@ -150,19 +150,16 @@ export default function VolunteerPage() {
 
   const canAct = useMemo(() => Boolean(team), [team])
 
-  const onSearch = async (e) => {
+  const onSearch = (e) => {
     e.preventDefault()
-    setSearching(true)
-    try {
-      const items = await searchTeamsByName(search)
-      setSearchResults(items)
-      setMessage(items.length ? `Found ${items.length} team(s)` : 'No teams matched that search')
-    } catch (err) {
-      setMessage(err.message)
-    } finally {
-      setSearching(false)
-    }
+    // Manual search button fallback
   }
+
+  const filteredResults = useMemo(() => {
+    if (!search.trim()) return []
+    const q = search.toLowerCase().trim()
+    return teams.filter(t => t.team_name.toLowerCase().includes(q) || t.team_id.toLowerCase().includes(q)).slice(0, 10)
+  }, [teams, search])
 
   return (
     <div className="login-page volunteer-page">
@@ -259,7 +256,7 @@ export default function VolunteerPage() {
                       {team.is_present ? '✓ Attendance Verified' : 'Confirm Team Presence'}
                     </button>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', width: '100%' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '14px', width: '100%' }}>
                       <button 
                         className="login-submit" 
                         onClick={onOut} 
@@ -309,6 +306,42 @@ export default function VolunteerPage() {
                 <button type="submit" disabled={searching} className="login-tab active" style={{ padding: '0 20px', borderRadius: '0 14px 14px 0' }}>{searching ? '...' : '🔍'}</button>
               </div>
             </form>
+
+            {filteredResults.length > 0 && (
+              <div style={{ marginTop: '16px', background: 'rgba(0,0,0,0.3)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', animation: 'fadeIn 0.3s ease-out' }}>
+                {filteredResults.map((t) => (
+                  <div 
+                    key={t.team_id} 
+                    onClick={() => {
+                       // Load into scanner confirmation flow
+                       setPendingTeam(t);
+                       setIsConfirmed(false);
+                       setSearch('');
+                    }}
+                    style={{ 
+                      padding: '16px', 
+                      borderBottom: '1px solid rgba(255,255,255,0.05)', 
+                      cursor: 'pointer', 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div>
+                      <strong style={{ color: '#fff', fontSize: '1rem', display: 'block' }}>{t.team_name}</strong>
+                      <span style={{ color: '#818cf8', fontSize: '0.8rem', fontFamily: 'monospace' }}>ID: {t.team_id}</span>
+                    </div>
+                    <div style={{ background: 'rgba(129, 140, 248, 0.1)', color: '#818cf8', padding: '6px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700 }}>
+                      SELECT
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
           </div>
 
         </div>
