@@ -436,7 +436,9 @@ export async function saveTeacherScore(teamId, scores, remarks, teacherName, tea
 
   const payload = {
     team_id: teamId,
-    teacher_id: teacherId ?? null,
+    // teacher_id references auth.users(id), but local accounts live in
+    // user_accounts, so we must set this to null to avoid FK violations.
+    teacher_id: null,
     teacher_name: teacherName,
     problem_understanding: scores.problem_understanding || 0,
     novelty: scores.novelty || 0,
@@ -450,12 +452,9 @@ export async function saveTeacherScore(teamId, scores, remarks, teacherName, tea
     updated_at: new Date().toISOString(),
   }
 
-  // By removing onConflict: 'team_id', we allow multiple entries if they have different IDs. 
-  // Ideally, we'd upsert on [team_id, teacher_id] but for now, simple insert/upsert will work 
-  // if the DB index is set up correctly. Let's assume teacher_id is unique enough.
   const { error } = await supabase.from('teacher_scores').upsert(payload, { onConflict: 'team_id, teacher_name' })
   if (error) {
-    // If double column constraint doesn't exist, fallback to single team_id for now or just insert
+    // If composite unique constraint doesn't exist, fallback to insert
     const { error: retryError } = await supabase.from('teacher_scores').insert(payload)
     if (retryError) throw retryError
   }
@@ -511,16 +510,27 @@ export function subscribeToTeams(onUpdate) {
 }
 
 export function subscribeToRules(onUpdate) {
-  if (!supabase) return () => {}
+  // Poll localStorage for rule changes (covers admin saving locally)
+  const pollInterval = setInterval(async () => {
+    try {
+      const rules = await getRules()
+      onUpdate(rules)
+    } catch { /* ignore */ }
+  }, 3000)
+
+  if (!supabase) return () => clearInterval(pollInterval)
 
   const channel = supabase
     .channel('public:settings')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.rules' }, async (payload) => {
-      onUpdate(payload.new)
+      const merged = { ...defaultRules, ...payload.new }
+      writeLocalRules(merged)
+      onUpdate(merged)
     })
     .subscribe()
 
   return () => {
+    clearInterval(pollInterval)
     supabase.removeChannel(channel)
   }
 }
