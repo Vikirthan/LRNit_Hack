@@ -243,15 +243,7 @@ export default function TeacherPage() {
             <div className="panel-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                <h2 style={{ color: '#fff', fontSize: '1.3rem', fontWeight: 700 }}>Team Explorer</h2>
                <div style={{ display: 'flex', gap: '8px' }}>
-                 {rules.jury_mode === 'manual' && (
-                   <button 
-                     onClick={() => setScanOpen(!scanOpen)} 
-                     className="login-tab active" 
-                     style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px', background: scanOpen ? '#f87171' : '#6366f1' }}
-                   >
-                     {scanOpen ? 'Close Scan' : '📷 QR Scan'}
-                   </button>
-                 )}
+
                  <button onClick={refreshTeams} disabled={loading} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '10px' }}>
                    {loading ? '...' : 'Refresh'}
                  </button>
