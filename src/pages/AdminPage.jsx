@@ -55,6 +55,12 @@ export default function AdminPage() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduledMails, setScheduledMails] = useState([])
   const [teamFilter, setTeamFilter] = useState('')
+  
+  // Advanced Mailing States
+  const [selectedRecipients, setSelectedRecipients] = useState([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [deliveryStatus, setDeliveryStatus] = useState({}) // { email: { status, error, name } }
+  const [showFailedOnly, setShowFailedOnly] = useState(false)
 
   const refresh = async () => {
     try {
@@ -111,6 +117,17 @@ export default function AdminPage() {
       fromEmail: mailFromEmail
     }))
   }, [mailSubject, mailContent, mailSignature, mailFromName, mailFromEmail])
+
+  // Helpers for dynamic mailing
+  const getDynamicContent = (text, recipient) => {
+    if (!text) return ''
+    if (!recipient) return text
+    return text
+      .replace(/\[Participant Name\]/gi, recipient.name || 'Participant')
+      .replace(/\{\{name\}\}/gi, recipient.name || 'Participant')
+      .replace(/\[Team Name\]/gi, recipient.team_name || 'Team')
+      .replace(/\{\{team\}\}/gi, recipient.team_name || 'Team')
+  }
 
   const onImport = async (e) => {
     const file = e.target.files?.[0]
@@ -298,26 +315,40 @@ export default function AdminPage() {
     }
   }
 
-  const handleRecipientImport = async (e) => {
+  const handleRecipientImport = async (e, mode = 'replace') => {
     const file = e.target.files?.[0]
     if (!file) return
     setStatus('Parsing recipient list...')
     try {
       const data = await parseRecipientFile(file)
-      setRecipients(data)
-      setStatus(`✓ Loaded ${data.length} recipients. Now compose your mail below.`)
+      if (mode === 'append') {
+        const uniqueNewData = data.filter(newItem => !recipients.some(oldItem => oldItem.email === newItem.email))
+        setRecipients(prev => [...prev, ...uniqueNewData])
+        setStatus(`✓ Appended ${uniqueNewData.length} new recipients.`)
+      } else {
+        setRecipients(data)
+        setStatus(`✓ Loaded ${data.length} recipients.`)
+      }
+      setSelectedRecipients([]) // Reset selection on major changes
     } catch (err) {
       setStatus(`Import failed: ${err.message}`)
     }
   }
 
-  const handleSendCustomBatch = async () => {
-    if (!mailSubject.trim() || !mailContent.trim()) {
-      alert("Please provide both subject and content.")
+  const handleSendCustomBatch = async (retryFailed = false) => {
+    const targetList = retryFailed 
+      ? recipients.filter(r => deliveryStatus[r.email]?.status === 'failed')
+      : (selectedRecipients.length > 0 
+          ? recipients.filter(r => selectedRecipients.includes(r.email)) 
+          : recipients)
+
+    if (targetList.length === 0) {
+      alert("No recipients to send to.")
       return
     }
-    if (recipients.length === 0) {
-      alert("Please upload a recipient list first.")
+
+    if (!mailSubject.trim() || !mailContent.trim()) {
+      alert("Please provide both subject and content.")
       return
     }
 
@@ -328,7 +359,7 @@ export default function AdminPage() {
         return
       }
 
-      if (!window.confirm(`Schedule this email blast for ${schDate.toLocaleString()}?`)) return
+      if (!window.confirm(`Schedule this email blast for ${targetList.length} recipients at ${schDate.toLocaleString()}?`)) return
       
       setSendingCustom(true)
       try {
@@ -338,7 +369,7 @@ export default function AdminPage() {
           subject: mailSubject,
           content: mailContent,
           signature: mailSignature,
-          recipients: recipients,
+          recipients: targetList,
           from_name: mailFromName,
           from_email: mailFromEmail,
           event_logo_url: rules.event_logo_url,
@@ -348,7 +379,6 @@ export default function AdminPage() {
         if (error) throw error
         alert("✅ Email blast scheduled successfully!")
         setScheduledAt('')
-        setRecipients([])
         refresh()
       } catch (err) {
         alert("Scheduling failed: " + err.message)
@@ -358,38 +388,45 @@ export default function AdminPage() {
       return
     }
 
-    if (!window.confirm(`Send custom email to ${recipients.length} recipients now?`)) return
+    if (!window.confirm(`Send custom email to ${targetList.length} recipients now?`)) return
 
     setSendingCustom(true)
     let success = 0
     let fail = 0
+    const newStatus = { ...deliveryStatus }
     setStatus(`📨 Starting custom batch mailing...`)
 
-    for (let i = 0; i < recipients.length; i++) {
-        const r = recipients[i]
+    for (let i = 0; i < targetList.length; i++) {
+        const r = targetList[i]
         try {
-            setStatus(`📫 Sending to ${r.name || r.email} (${i+1}/${recipients.length})...`)
+            setStatus(`📫 Sending to ${r.name || r.email} (${i+1}/${targetList.length})...`)
             const res = await sendCustomEmail({
                 email: r.email,
                 name: r.name,
-                subject: mailSubject,
-                content: mailContent,
+                subject: getDynamicContent(mailSubject, r),
+                content: getDynamicContent(mailContent, r),
                 signature: mailSignature,
                 fromEmail: mailFromEmail,
                 fromName: mailFromName,
                 eventLogoUrl: rules.event_logo_url
             })
-            if (res?.success) success++
-            else throw new Error(res?.error || "Unknown error")
+            
+            if (res?.success) {
+              success++
+              newStatus[r.email] = { status: 'success', name: r.name }
+            } else {
+              throw new Error(res?.error || "Unknown error")
+            }
         } catch (err) {
             fail++
             console.error(`Mailing error for ${r.email}:`, err)
+            newStatus[r.email] = { status: 'failed', name: r.name, error: err.message }
         }
+        setDeliveryStatus({ ...newStatus }) // Update live
     }
 
     alert(`Mailing Complete!\n✓ Success: ${success}\n✖ Failed: ${fail}`)
     setSendingCustom(false)
-    setRecipients([])
     refresh()
   }
 
@@ -1188,23 +1225,78 @@ export default function AdminPage() {
                   <span>📋</span> Recipient List
                 </h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '12px', background: '#6366f1' }}>
-                    📁 Choose List File
-                    <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleRecipientImport} />
-                  </label>
-                  <button onClick={downloadMailingTemplate} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '10px', borderRadius: '12px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', background: '#6366f1', fontSize: '0.75rem' }}>
+                      📁 New List
+                      <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={(e) => handleRecipientImport(e, 'replace')} />
+                    </label>
+                    <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.3)', fontSize: '0.75rem' }}>
+                      ➕ Append
+                      <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={(e) => handleRecipientImport(e, 'append')} />
+                    </label>
+                  </div>
+                  <button onClick={downloadMailingTemplate} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '10px', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', marginTop: '4px' }}>
                     📥 Download Sample Template
                   </button>
                 </div>
 
                 {recipients.length > 0 && (
-                  <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <span style={{ color: '#4ade80', fontSize: '0.85rem', fontWeight: 600 }}>{recipients.length} Contacts Loaded</span>
-                      <button onClick={() => setRecipients([])} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Clear</button>
+                      <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 600 }}>{recipients.length} Contacts</span>
+                      <button onClick={() => {
+                        setRecipients([]);
+                        setSelectedRecipients([]);
+                        setDeliveryStatus({});
+                        setPreviewIndex(0);
+                      }} style={{ color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>Clear All</button>
                     </div>
-                  </div>
-                )}
+
+                    <div className="custom-scroll" style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead style={{ position: 'sticky', top: 0, background: '#1e293b', zIndex: 1 }}>
+                          <tr>
+                            <th style={{ padding: '10px', textAlign: 'left', width: '30px' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={selectedRecipients.length === recipients.length} 
+                                onChange={(e) => setSelectedRecipients(e.target.checked ? recipients.map(r => r.email) : [])} 
+                              />
+                            </th>
+                            <th style={{ padding: '10px', textAlign: 'left', color: 'rgba(255,255,255,0.4)' }}>Participant</th>
+                            <th style={{ padding: '10px', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recipients.map((r, idx) => {
+                            const status = deliveryStatus[r.email]
+                            return (
+                              <tr key={r.email} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: status?.status === 'failed' ? 'rgba(248, 113, 113, 0.05)' : 'transparent' }}>
+                                <td style={{ padding: '8px 10px' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={selectedRecipients.includes(r.email)} 
+                                    onChange={(e) => {
+                                      if (e.target.checked) setSelectedRecipients([...selectedRecipients, r.email])
+                                      else setSelectedRecipients(selectedRecipients.filter(id => id !== r.email))
+                                    }} 
+                                  />
+                                </td>
+                                <td style={{ padding: '8px 10px' }}>
+                                  <div style={{ color: '#fff', fontWeight: 600 }}>{r.name || 'No Name'}</div>
+                                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>{r.email}</div>
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                  {status?.status === 'success' && <span title="Sent Successfully">✅</span>}
+                                  {status?.status === 'failed' && <span title={status.error} style={{ cursor: 'help' }}>❌</span>}
+                                  {!status && <span style={{ opacity: 0.2 }}>-</span>}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
               </div>
 
               {/* Scheduled Mails List */}
@@ -1344,13 +1436,38 @@ export default function AdminPage() {
                       </div>
                     </div>
                   </div>
+                  {/* Failure Status Banner */}
+                  {Object.values(deliveryStatus).some(s => s.status === 'failed') && (
+                    <div style={{ 
+                      padding: '16px', 
+                      background: 'rgba(248, 113, 113, 0.1)', 
+                      border: '1px solid rgba(248, 113, 113, 0.2)', 
+                      borderRadius: '16px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div style={{ color: '#f87171', fontSize: '0.85rem' }}>
+                        ⚠️ <strong>{Object.values(deliveryStatus).filter(s => s.status === 'failed').length} Emails Failed</strong>
+                        <p style={{ margin: '4px 0 0 0', opacity: 0.7, fontSize: '0.75rem' }}>IDs: {Object.entries(deliveryStatus).filter(([_, s]) => s.status === 'failed').map(([email, _]) => email.split('@')[0]).slice(0, 3).join(', ')}...</p>
+                      </div>
+                      <button 
+                        onClick={() => handleSendCustomBatch(true)} 
+                        className="login-tab active" 
+                        style={{ background: '#f87171', color: '#fff', fontSize: '0.75rem', padding: '6px 12px' }}
+                      >
+                        🔄 Resend to Failed
+                      </button>
+                    </div>
+                  )}
+
                   <button 
-                    onClick={handleSendCustomBatch}
-                    disabled={sendingCustom || recipients.length === 0}
+                    onClick={() => handleSendCustomBatch()}
+                    disabled={sendingCustom || (recipients.length === 0 && selectedRecipients.length === 0)}
                     className="login-submit"
                     style={{ height: '46px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff', padding: '0 24px', fontSize: '0.9rem', marginTop: '12px' }}
                   >
-                    {sendingCustom ? '⏳ Sending...' : scheduledAt ? `Schedule Campaign` : `🚀 Blast to Recipients`}
+                    {sendingCustom ? '⏳ Sending...' : scheduledAt ? `Schedule Campaign` : selectedRecipients.length > 0 ? `🚀 Blast to ${selectedRecipients.length} Selected` : `🚀 Blast to All (${recipients.length})`}
                   </button>
                 </div>
               </div>
@@ -1364,8 +1481,21 @@ export default function AdminPage() {
                     <div style={{ display: 'flex', gap: '6px' }}>
                        {[1, 2, 3].map(i => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i===1 ? '#f87171' : i===2 ? '#fbbf24' : '#4ade80' }} />)}
                     </div>
-                    <div style={{ flex: 1, background: '#f1f5f9', borderRadius: '6px', height: '24px', display: 'flex', alignItems: 'center', padding: '0 12px', color: '#64748b', fontSize: '0.7rem' }}>
-                      preview.lrnit.in/mail-view
+                    <div style={{ flex: 1, background: '#f1f5f9', borderRadius: '6px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', color: '#64748b', fontSize: '0.7rem' }}>
+                      <span>preview.lrnit.in/mail-view</span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                         <button 
+                           onClick={() => setPreviewIndex(prev => Math.max(0, prev - 1))}
+                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                         >⬅️</button>
+                         <span style={{ fontWeight: 700, color: '#334155' }}>
+                           {recipients.length > 0 ? `${previewIndex + 1} / ${recipients.length}` : 'Empty'}
+                         </span>
+                         <button 
+                           onClick={() => setPreviewIndex(prev => Math.min(recipients.length - 1, prev + 1))}
+                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                         >➡️</button>
+                      </div>
                     </div>
                   </div>
 
@@ -1392,10 +1522,14 @@ export default function AdminPage() {
 
                         {/* Email Body */}
                         <div style={{ padding: '32px 24px', fontFamily: 'Inter, Segoe UI, sans-serif' }}>
-                           <h1 style={{ color: '#111827', fontSize: '1.25rem', fontWeight: 700, marginBottom: '20px' }}>{mailSubject || '(No Subject)'}</h1>
-                           <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 20px 0' }}>Hi <strong>[Participant Name]</strong>,</p>
+                           <h1 style={{ color: '#111827', fontSize: '1.25rem', fontWeight: 700, marginBottom: '20px' }}>
+                             {getDynamicContent(mailSubject, recipients[previewIndex]) || '(No Subject)'}
+                           </h1>
+                           <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 20px 0' }}>
+                             Hi <strong>{recipients[previewIndex]?.name || '[Participant Name]'}</strong>,
+                           </p>
                            <div style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                             {mailContent || 'Start writing your message in the composer to see the live preview here...'}
+                             {getDynamicContent(mailContent, recipients[previewIndex]) || 'Start writing your message in the composer to see the live preview here...'}
                            </div>
                             <div style={{ marginTop: '32px', borderTop: '1px solid #f3f4f6', paddingTop: '24px' }}>
                                <div style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
