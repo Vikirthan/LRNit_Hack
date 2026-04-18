@@ -806,11 +806,11 @@ export default function AdminPage() {
                     XLSX Template
                   </button>
                 </div>
-                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%' }} onClick={onGenerateAllTokens}>🛠️ Generate/Repair ALL Tokens</button>
-                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
-                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', width: '100%' }} onClick={onAlertAwayTeams}>📢 Alert Absent Teams to Arena</button>
-                <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)' }} onClick={exportToExcel}>📥 Export Master Excel (with QRs)</button>
-                <button className="login-submit" style={{ marginTop: '12px', width: '100%' }} onClick={() => refresh()}>Force Sync Display</button>
+                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%', boxShadow: 'none' }} onClick={onGenerateAllTokens}>🛠️ Generate/Repair ALL Tokens</button>
+                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%', boxShadow: 'none' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
+                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', width: '100%', boxShadow: 'none' }} onClick={onAlertAwayTeams}>📢 Alert Absent Teams to Arena</button>
+                <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)', boxShadow: 'none' }} onClick={exportToExcel}>📥 Export Master Excel (with QRs)</button>
+                <button className="login-submit" style={{ marginTop: '12px', width: '100%', boxShadow: 'none' }} onClick={() => refresh()}>Force Sync Display</button>
               </div>
             </div>
             
