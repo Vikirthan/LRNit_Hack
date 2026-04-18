@@ -101,22 +101,30 @@ export async function saveRules(payload) {
   try {
     // Only send columns that are expected by the settings table to avoid schema cache errors
     const allowed = ['key', 'max_break_time', 'grace_time', 'penalty_per_minute', 'overdue_email_enabled', 'jury_mode', 'is_active', 'event_logo_url', 'updated_at']
-    const toUpsert = { key: 'rules', updated_at: new Date().toISOString() }
+    let toUpsert = { key: 'rules', updated_at: new Date().toISOString() }
     for (const k of Object.keys(payload || {})) {
       if (allowed.includes(k)) toUpsert[k] = payload[k]
     }
 
-    let { error } = await supabase.from('settings').upsert(toUpsert)
+    // Backward-compat: older deployments can miss one or more optional columns.
+    // Retry by removing the missing column reported by PostgREST schema cache.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const { error } = await supabase.from('settings').upsert(toUpsert)
+      if (!error) return
 
-    // Backward-compat: some deployed schemas don't have event_logo_url yet.
-    // On any failure, retry once without event_logo_url so core rules still persist.
-    if (error && Object.prototype.hasOwnProperty.call(toUpsert, 'event_logo_url')) {
-      const { event_logo_url, ...fallbackUpsert } = toUpsert
-      const retry = await supabase.from('settings').upsert(fallbackUpsert)
-      error = retry.error
+      const msg = String(error.message || '')
+      const missingColMatch = msg.match(/Could not find the '([^']+)' column/i)
+      const missingCol = missingColMatch?.[1]
+
+      if (!missingCol || !Object.prototype.hasOwnProperty.call(toUpsert, missingCol)) {
+        throw error
+      }
+
+      const { [missingCol]: _removed, ...nextUpsert } = toUpsert
+      toUpsert = nextUpsert
     }
 
-    if (error) throw error
+    throw new Error('Failed to save rules after compatibility retries')
   } catch (err) {
     console.warn('saveRules: Supabase failed, rules saved locally only', err)
     // Rethrow so callers can react to failures (avoid silent reconciliation reverting UI)
