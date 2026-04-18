@@ -24,11 +24,11 @@
   .topbar { flex-direction: column !important; gap: 16px !important; align-items: flex-start !important; }
   .topbar-actions { width: 100% !important; justify-content: space-between !important; }
   .sheet-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
-  .sheet-table th, .sheet-table td { min-width: 120px !important; padding: 12px !important; }
+  .sheet-table th, .sheet-table td { min-width: 110px !important; padding: 10px !important; }
   .login-auth-panel { padding: 20px !important; border-radius: 20px !important; width: 100% !important; }
   .scanner-box { height: 320px !important; overflow: hidden; border-radius: 16px; margin: 0 auto; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
   .scanner-box video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
-  .login-page { place-items: start center !important; overflow-y: auto !important; padding: 10px !important; }
+  .login-page { place-items: start center !important; overflow-y: auto !important; overflow-x: hidden !important; padding: 10px !important; }
   .volunteer-page .login-auth-panel { margin-bottom: 40px; }
   .mailing-center { flex-direction: column !important; gap: 24px !important; }
   .mailing-center > div { width: 100% !important; }
@@ -63,6 +63,7 @@ body {
     radial-gradient(circle at 50% 100%, rgba(180, 35, 24, 0.08) 0%, transparent 30%),
     #0b0f1a;
   min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 h1,

@@ -764,7 +764,7 @@ export default function AdminPage() {
               </div>
               <div style={{ marginTop: '24px' }}>
                 <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>Required Columns (in order):</p>
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', marginTop: '8px', fontFamily: 'monospace', color: '#93c5fd', fontSize: '0.8rem' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', marginTop: '8px', fontFamily: 'monospace', color: '#93c5fd', fontSize: '0.8rem', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                   team_id, team_name, members_count, room_number, emails
                 </div>
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', marginTop: '12px' }}>
@@ -1132,11 +1132,11 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'settings' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '32px' }}>
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: isMobile ? '18px' : '32px' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '36px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>Event Protocols</h2>
               <div className="stack" style={{ gap: '28px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                   <div className="login-field">
                     <label style={{ color: '#fff', marginBottom: '8px' }}>Max Break Time (Minutes)</label>
                     <div className="login-input-wrap">
@@ -1192,7 +1192,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+                <div style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.1)', overflowWrap: 'anywhere' }}>
                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem' }}>
                      <strong>Logic:</strong> Teams will be penalized {rules.penalty_per_unit} marks for every 5-minute block they exceed beyond the {rules.max_break_time} min limit.
                    </p>
@@ -1208,7 +1208,7 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '36px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Managed Protocols</h2>
               <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <table className="sheet-table">
@@ -1252,10 +1252,10 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '36px' }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: '24px', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '10px' : 0 }}>
                 <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700 }}>Activity Streams (Logs)</h2>
-                <button onClick={() => refresh()} className="login-tab active" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Refresh Logs</button>
+                <button onClick={() => refresh()} className="login-tab active" style={{ padding: '8px 12px', fontSize: '0.85rem', width: isMobile ? '100%' : 'auto' }}>Refresh Logs</button>
               </div>
               <div className="sheet-wrap" style={{ maxHeight: '400px', borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <table className="sheet-table" style={{ fontSize: '0.9rem' }}>
