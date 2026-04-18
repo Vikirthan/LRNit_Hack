@@ -644,8 +644,9 @@ export default function AdminPage() {
           border: '1px solid rgba(255,255,255,0.08)', 
           marginBottom: isMobile ? '24px' : '40px', 
           display: 'flex', 
+          flexWrap: isMobile ? 'wrap' : 'nowrap',
           gap: '8px',
-          overflowX: 'auto',
+          overflowX: isMobile ? 'hidden' : 'auto',
           position: isMobile ? 'sticky' : 'static',
           top: isMobile ? '8px' : 'auto',
           zIndex: isMobile ? 50 : 'auto',
@@ -655,7 +656,7 @@ export default function AdminPage() {
             <button 
               key={tab}
               className={activeTab === tab ? 'login-tab active' : 'login-tab'} 
-              style={{ flex: isMobile ? '0 0 auto' : 1, minWidth: isMobile ? '120px' : 'auto', textTransform: 'capitalize', padding: isMobile ? '10px 14px' : '12px 20px', fontSize: isMobile ? '0.85rem' : '0.95rem', whiteSpace: 'nowrap' }}
+              style={{ flex: isMobile ? '1 1 calc(33.33% - 8px)' : 1, minWidth: isMobile ? 'unset' : 'auto', textTransform: 'capitalize', padding: isMobile ? '10px 12px' : '12px 20px', fontSize: isMobile ? '0.85rem' : '0.95rem', whiteSpace: 'nowrap' }}
               onClick={() => setActiveTab(tab)}
             >
               {tab === 'mailing' ? '📧 Mailing' : tab}
