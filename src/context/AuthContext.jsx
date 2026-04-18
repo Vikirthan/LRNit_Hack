@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { DEMO_ACCOUNTS } from '../constants/demoAccounts'
 import { authenticateAccount } from '../services/accountService'
-
 const AuthContext = createContext(null)
 const SESSION_KEY = 'ticketscan-session'
 

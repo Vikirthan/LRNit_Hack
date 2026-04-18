@@ -261,9 +261,14 @@ export default function TeacherPage() {
 
             {rules.jury_mode === 'manual' ? (
               <>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
+                  <button onClick={() => setScanOpen(true)} className="login-tab" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>🔍 Scan QR</button>
+                  <div style={{ flex: 1 }} />
+                </div>
+
                 <div className="login-field" style={{ marginBottom: '20px' }}>
                   <div className="login-input-wrap" style={{ background: 'rgba(0,0,0,0.2)' }}>
-                    <span className="login-input-icon">🔍</span>
+                    <span className="login-input-icon">🔎</span>
                     <input 
                       placeholder="Filter teams..." 
                       value={filter}

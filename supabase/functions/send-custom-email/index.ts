@@ -19,7 +19,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email, name, subject, content, signature, fromEmail, fromName, scheduledAt, eventLogoUrl } = await req.json();
+    const { email, name, subject, content, signature, fromEmail, fromName, scheduledAt, eventLogoUrl, htmlContent } = await req.json();
 
     if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY is not set in Supabase secrets");
     if (!email) throw new Error("Recipient email is required");
@@ -29,72 +29,70 @@ serve(async (req) => {
       sender: { name: fromName || SENDER_NAME, email: fromEmail || SENDER_EMAIL },
       to: [{ email, name }],
       subject: subject || "Update from Event Team",
-      htmlContent: `
+      htmlContent: htmlContent || `
         <!DOCTYPE html>
         <html>
         <head>
+          <meta name="color-scheme" content="light dark">
+          <meta name="supported-color-schemes" content="light dark">
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+            :root { color-scheme: light dark; supported-color-schemes: light dark; }
           </style>
         </head>
         <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           <div style="max-width: 550px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
             
-            <!-- Dark Modern Header (Unstop Inspired) -->
-            <div style="background-color: #1e293b; padding: 48px 24px; text-align: center;">
+            <!-- Version: 2.0.2 (Greetings Test) -->
+            <!-- Dark Modern Header (LRNit Branding) -->
+            <div style="background-color: #1e293b; padding: 32px 24px; text-align: center;">
               <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                
-                <!-- Icon Branding -->
-                <div style="margin-bottom: 24px;">
-                   <div style="width: 56px; height: 56px; margin: 0 auto 16px auto; background-color: #3b82f6; border-radius: 14px; display: table; text-align: center;">
-                      <span style="display: table-cell; vertical-align: middle; color: #ffffff; font-size: 24px; font-weight: 900; font-family: 'Inter', sans-serif;">L</span>
-                   </div>
-                   <h2 style="color: #ffffff; margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.04em;">
-                     LRN<span style="color: #60a5fa;">it</span>
-                   </h2>
-                   <div style="margin-top: 8px; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.35em; font-weight: 800;">Learn · Build · Lead</div>
-                </div>
+                <h2 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">
+                  LRN<span style="color: #60a5fa;">it</span>
+                </h2>
+                <div style="margin-top: 8px; color: rgba(255,255,255,0.4); font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 800;">Learn · Build · Lead</div>
 
-                <!-- Optional Event Logo Below -->
+                <!-- Optional Event Logo -->
                 ${eventLogoUrl ? `
-                <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1); width: 80%; margin-left: auto; margin-right: auto;">
-                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 54px; max-width: 220px; object-fit: contain;" />
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); width: 100%;">
+                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 40px; max-width: 180px; object-fit: contain;" />
                 </div>
                 ` : ''}
               </div>
             </div>
 
             <!-- Email Body Content -->
-            <div style="padding: 40px 32px; background-color: #ffffff;">
-              <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 24px 0; line-height: 1.3;">${subject}</h1>
-              <p style="color: #334155; font-size: 16px; margin: 0 0 20px 0; font-weight: 600;">Hi ${name || 'Participant'},</p>
+            <div style="padding: 32px 24px;">
+              <h1 style="color: #111827; font-size: 20px; font-weight: 700; margin: 0 0 20px 0;">${subject}</h1>
+              <p style="color: #374151; font-size: 15px; margin: 0 0 20px 0;">Greetings <strong>${name || 'Participant'}</strong>,</p>
               
-              <div style="color: #475569; font-size: 15px; line-height: 1.7; margin: 0 0 32px 0; white-space: pre-wrap;">
+              <div style="color: #4b5563; font-size: 14.5px; line-height: 1.6; margin: 0 0 32px 0; white-space: pre-wrap;">
                 ${content.replace(/\n/g, '<br/>')}
               </div>
 
               <!-- Professional Signature Area -->
-              ${signature ? `
-              <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid #f1f5f9;">
-                <div style="color: #334155; font-size: 15px; line-height: 1.6; font-style: normal;">
-                  ${signature.replace(/\n/g, '<br/>')}
+              <div style="margin-top: 32px; border-top: 1px solid #f3f4f6; padding-top: 24px;">
+                <div style="color: #4b5563; font-size: 14.5px; line-height: 1.6; font-style: normal; white-space: pre-wrap;">
+                  ${signature ? signature.replace(/\n/g, '<br/>') : `Best Regards,<br/>${fromName || 'LRNit Team'}`}
                 </div>
-                <!-- Mini Logo Branding in Signature -->
-                <div style="margin-top: 16px;">
-                  <strong style="color: #1e293b; font-size: 14px; font-weight: 700;">LRNit Team</strong>
-                </div>
+                ${eventLogoUrl ? `
+                  <img src="${eventLogoUrl}" alt="Signature Logo" style="height: 32px; margin-top: 12px; opacity: 0.8;" />
+                ` : ''}
               </div>
-              ` : ''}
             </div>
 
             <!-- Modern Footer -->
             <div style="background-color: #f8fafc; padding: 32px 24px; border-top: 1px solid #f1f5f9; text-align: center;">
-              <div style="margin-bottom: 20px;">
-                 <strong style="color: #1e293b; font-size: 15px;">LRNit Mailing Platform</strong>
-                 <div style="color: #64748b; font-size: 12px; margin-top: 6px;">Join our community of builders and innovators.</div>
+              <div style="margin-bottom: 12px;">
+                 <div style="width: 40px; height: 40px; margin: 0 auto 16px auto; background-color: #3b82f6; border-radius: 10px; display: table; text-align: center;">
+                    <span style="display: table-cell; vertical-align: middle; color: #ffffff; font-size: 18px; font-weight: 900;">L</span>
+                 </div>
+                 <strong style="color: #1e293b; font-size: 14px;">LRNit Mailing Platform</strong>
+                 <div style="color: #64748b; font-size: 12px; margin-top: 4px;">Join our community of builders.</div>
               </div>
-              <div style="padding-top: 20px; border-top: 1px solid #eef2f6; color: #94a3b8; font-size: 11px;">
-                © 2026 LRNit. All rights reserved. Professional Event Infrastructure.
+              <div style="color: #94a3b8; font-size: 10px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                © 2026 LRNit. All rights reserved. <br/>
+                <span style="color: #cbd5e1; font-size: 9px;">System ID: TS-SYNC-202</span>
               </div>
             </div>
           </div>

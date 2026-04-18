@@ -99,10 +99,19 @@ export async function saveRules(payload) {
   if (!hasSupabaseConfig || !supabase) return
 
   try {
-    const { error } = await supabase.from('settings').upsert({ key: 'rules', ...payload, updated_at: new Date().toISOString() })
+    // Only send columns that are expected by the settings table to avoid schema cache errors
+    const allowed = ['key', 'max_break_time', 'grace_time', 'penalty_per_minute', 'overdue_email_enabled', 'jury_mode', 'is_active', 'event_logo_url', 'updated_at']
+    const toUpsert = { key: 'rules', updated_at: new Date().toISOString() }
+    for (const k of Object.keys(payload || {})) {
+      if (allowed.includes(k)) toUpsert[k] = payload[k]
+    }
+
+    const { error } = await supabase.from('settings').upsert(toUpsert)
     if (error) throw error
   } catch (err) {
     console.warn('saveRules: Supabase failed, rules saved locally only', err)
+    // Rethrow so callers can react to failures (avoid silent reconciliation reverting UI)
+    throw err
   }
 }
 
@@ -223,12 +232,28 @@ export async function deleteTeamsBySource(sourceFile) {
 
 export async function verifyScanToken(token) {
   if (!supabase) throw new Error('Supabase is not configured yet')
-
-  const { data, error } = await supabase.functions.invoke('verify-qr-token', {
+  // Call edge function and provide clearer error messages when it fails
+  const invokeResult = await supabase.functions.invoke('verify-qr-token', {
     body: { token },
   })
-  if (error) throw error
 
+  if (invokeResult.error) {
+    // Attempt to extract a helpful message from the function response body
+    let serverMsg = invokeResult.error.message || 'Edge function error'
+    try {
+      if (invokeResult.data) {
+        const parsed = typeof invokeResult.data === 'string' ? JSON.parse(invokeResult.data) : invokeResult.data
+        if (parsed?.error) serverMsg = parsed.error
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+    // Log the full invoke result for debugging in browser console
+    try { console.error('verify-qr-token invokeResult:', invokeResult) } catch(e) {}
+    throw new Error(serverMsg)
+  }
+
+  const data = invokeResult.data
   const teamId = data?.teamId
   if (!teamId) throw new Error('Invalid QR token')
 
@@ -290,7 +315,8 @@ export async function markOut(teamId, membersOut, actorUid) {
   const { data, error } = await supabase.rpc('mark_out', {
     p_team_id: teamId,
     p_members_out: membersOut,
-    p_actor_id: actorUid ?? null,
+    // user_accounts/demo IDs are not guaranteed to exist in auth.users; avoid FK violations
+    p_actor_id: null,
   })
 
   if (error) throw error
@@ -302,7 +328,8 @@ export async function markIn(teamId, actorUid) {
 
   const { data, error } = await supabase.rpc('mark_in', {
     p_team_id: teamId,
-    p_actor_id: actorUid ?? null,
+    // user_accounts/demo IDs are not guaranteed to exist in auth.users; avoid FK violations
+    p_actor_id: null,
   })
 
   if (error) throw error
@@ -337,7 +364,8 @@ export async function markAttendance(teamId, actorUid) {
     team_id: teamId,
     action_type: 'ATTENDANCE',
     payload: { is_present: true },
-    actor_id: actorUid ?? null
+    // user_accounts/demo IDs are not guaranteed to exist in auth.users; avoid FK violations
+    actor_id: null
   })
 
   return { success: true }

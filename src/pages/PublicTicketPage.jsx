@@ -119,14 +119,18 @@ export default function PublicTicketPage() {
             background: 'white', 
             padding: '24px', 
             borderRadius: '32px', 
-            display: 'inline-block',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 20px rgba(99, 102, 241, 0.2)',
             marginBottom: '24px',
+            marginLeft: 'auto',
+            marginRight: 'auto',
             position: 'relative',
             overflow: 'hidden'
           }}>
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '6px', background: 'linear-gradient(90deg, #6366f1, #a855f7)' }} />
-            <img src={qrUrl} alt="QR Code" style={{ width: '100%', maxWidth: '240px', height: 'auto', display: 'block' }} />
+            <img src={qrUrl} alt="QR Code" style={{ width: '100%', maxWidth: '240px', height: 'auto', display: 'block', margin: '0 auto' }} />
           </div>
           
           <button 

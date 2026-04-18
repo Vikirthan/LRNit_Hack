@@ -24,9 +24,11 @@ import { saveAs } from 'file-saver'
 import { getPendingAccounts, getAllAccounts, approveAccount, rejectAccount, deleteAccount } from '../services/accountService'
 import TeamTimer from '../components/TeamTimer'
 import QrScanner from '../components/QrScanner'
+import Toast from '../components/Toast'
 
 export default function AdminPage() {
   const { profile, logout } = useAuth()
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [teams, setTeams] = useState([])
   const [teacherScores, setTeacherScores] = useState([])
@@ -40,6 +42,7 @@ export default function AdminPage() {
   const [logs, setLogs] = useState([])
   const [accounts, setAccounts] = useState([])
   const [status, setStatus] = useState(null)
+    const [toast, setToast] = useState({ visible: false, message: '', type: 'info' })
   const [importing, setImporting] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -107,6 +110,12 @@ export default function AdminPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   // Auto-save Draft
   useEffect(() => {
     localStorage.setItem('mail_draft', JSON.stringify({
@@ -127,6 +136,67 @@ export default function AdminPage() {
       .replace(/\{\{name\}\}/gi, recipient.name || 'Participant')
       .replace(/\[Team Name\]/gi, recipient.team_name || 'Team')
       .replace(/\{\{team\}\}/gi, recipient.team_name || 'Team')
+  }
+
+  const escapeHtml = (value = '') => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+  const withBreaks = (value = '') => escapeHtml(value).replace(/\n/g, '<br/>')
+
+  const buildEmailHtml = ({ recipient, subject, content, signature, fromName, eventLogoUrl }) => {
+    const safeSubject = escapeHtml(subject || 'Update from Event Team')
+    const safeName = escapeHtml(recipient?.name || 'Participant')
+    const safeContent = withBreaks(content || '')
+    const safeSignature = withBreaks(signature || `Best Regards,\n${fromName || 'LRNit Team'}`)
+    const safeLogoUrl = eventLogoUrl ? escapeHtml(eventLogoUrl) : ''
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <style>
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; background-color: #f1f5f9; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body>
+  <div style="max-width:550px;margin:40px auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
+    <div style="background-color:#1e293b;padding:32px 24px;text-align:center;">
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <h2 style="color:#ffffff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.02em;">LRN<span style="color:#60a5fa;">it</span></h2>
+        <div style="margin-top:8px;color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.2em;font-weight:800;">Learn · Build · Lead</div>
+        ${safeLogoUrl ? `
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.1);width:100%;">
+          <img src="${safeLogoUrl}" alt="Event Logo" style="height:40px;max-width:180px;object-fit:contain;" />
+        </div>` : ''}
+      </div>
+    </div>
+    <div style="padding:32px 24px;">
+      <h1 style="color:#111827;font-size:20px;font-weight:700;margin:0 0 20px 0;">${safeSubject}</h1>
+      <p style="color:#374151;font-size:15px;margin:0 0 20px 0;">Greetings <strong>${safeName}</strong>,</p>
+      <div style="color:#4b5563;font-size:14.5px;line-height:1.6;margin:0 0 32px 0;white-space:normal;">${safeContent || 'Start writing your message in the composer to see the live preview here...'}</div>
+      <div style="margin-top:32px;border-top:1px solid #f3f4f6;padding-top:24px;">
+        <div style="color:#4b5563;font-size:14.5px;line-height:1.6;white-space:normal;">${safeSignature}</div>
+        ${safeLogoUrl ? `<img src="${safeLogoUrl}" alt="Signature Logo" style="height:32px;margin-top:12px;opacity:0.8;" />` : ''}
+      </div>
+    </div>
+    <div style="background-color:#f8fafc;padding:32px 24px;border-top:1px solid #f1f5f9;text-align:center;">
+      <div style="margin-bottom:12px;">
+        <div style="width:40px;height:40px;margin:0 auto 16px auto;background-color:#3b82f6;border-radius:10px;display:table;text-align:center;"><span style="display:table-cell;vertical-align:middle;color:#ffffff;font-size:18px;font-weight:900;">L</span></div>
+        <strong style="color:#1e293b;font-size:14px;">LRNit Mailing Platform</strong>
+        <div style="color:#64748b;font-size:12px;margin-top:4px;">Join our community of builders.</div>
+      </div>
+      <div style="color:#94a3b8;font-size:10px;margin-top:24px;border-top:1px solid #f1f5f9;padding-top:16px;">© 2026 LRNit. All rights reserved.</div>
+    </div>
+  </div>
+</body>
+</html>`
   }
 
   const onImport = async (e) => {
@@ -258,9 +328,11 @@ export default function AdminPage() {
     try {
       await approveAccount(id)
       setStatus('Account approved')
+      setToast({ visible: true, message: 'Account approved', type: 'success' })
       refresh()
     } catch (err) {
       setStatus(`Error: ${err.message}`)
+      setToast({ visible: true, message: `Approve failed: ${err.message}`, type: 'error' })
     }
   }
 
@@ -268,9 +340,11 @@ export default function AdminPage() {
     try {
       await rejectAccount(id)
       setStatus('Account rejected')
+      setToast({ visible: true, message: 'Account rejected', type: 'success' })
       refresh()
     } catch (err) {
       setStatus(`Error: ${err.message}`)
+      setToast({ visible: true, message: `Reject failed: ${err.message}`, type: 'error' })
     }
   }
 
@@ -279,11 +353,14 @@ export default function AdminPage() {
     try {
       await deleteAccount(id)
       setStatus('Account deleted')
+      setToast({ visible: true, message: 'Account deleted', type: 'success' })
       refresh()
     } catch (err) {
       setStatus(`Error: ${err.message}`)
+      setToast({ visible: true, message: `Delete failed: ${err.message}`, type: 'error' })
     }
   }
+  <Toast message={toast.message} type={toast.type} visible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} />
 
   const onDeleteBySource = async (sourceFile) => {
     if (!window.confirm(`Delete ALL teams imported from "${sourceFile}"? This cannot be undone.`)) return
@@ -372,7 +449,6 @@ export default function AdminPage() {
           recipients: targetList,
           from_name: mailFromName,
           from_email: mailFromEmail,
-          event_logo_url: rules.event_logo_url,
           user_id: user?.id,
           status: 'pending'
         })
@@ -408,7 +484,15 @@ export default function AdminPage() {
                 signature: mailSignature,
                 fromEmail: mailFromEmail,
                 fromName: mailFromName,
-                eventLogoUrl: rules.event_logo_url
+                eventLogoUrl: rules.event_logo_url,
+                htmlContent: buildEmailHtml({
+                  recipient: r,
+                  subject: getDynamicContent(mailSubject, r),
+                  content: getDynamicContent(mailContent, r),
+                  signature: mailSignature,
+                  fromName: mailFromName,
+                  eventLogoUrl: rules.event_logo_url,
+                })
             })
             
             if (res?.success) {
@@ -541,33 +625,37 @@ export default function AdminPage() {
       <div className="login-bg-orb login-bg-orb-2" />
       <div className="login-bg-grid" />
 
-      <main className="layout admin-layout" style={{ position: 'relative', zIndex: 1, maxWidth: '1400px' }}>
-        <header className="topbar" style={{ padding: '24px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <main className="layout admin-layout" style={{ position: 'relative', zIndex: 1, maxWidth: isMobile ? '100%' : '1400px' }}>
+        <header className="topbar" style={{ padding: isMobile ? '12px 0 16px' : '24px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: isMobile ? '20px' : '32px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '14px' : undefined }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', width: isMobile ? '100%' : 'auto' }}>
             <div className="login-feature-icon" style={{ width: '48px', height: '48px', fontSize: '1.4rem', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>⚡</div>
-            <h1 style={{ color: '#fff', fontSize: '1.8rem', margin: 0 }}>Command <span>Center</span></h1>
+            <h1 style={{ color: '#fff', fontSize: isMobile ? '1.35rem' : '1.8rem', margin: 0 }}>Command <span>Center</span></h1>
           </div>
-          <div className="topbar-actions" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div className="topbar-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
             <OnlineIndicator />
-            <button onClick={logout} className="login-tab active" style={{ borderRadius: '12px', padding: '10px 24px', fontSize: '0.9rem' }}>Sign Out</button>
+            <button onClick={logout} className="login-tab active" style={{ borderRadius: '12px', padding: isMobile ? '9px 14px' : '10px 24px', fontSize: '0.9rem' }}>Sign Out</button>
           </div>
         </header>
 
         <nav className="tab-nav" style={{ 
           background: 'rgba(255,255,255,0.04)', 
-          padding: '8px', 
+          padding: isMobile ? '6px' : '8px', 
           borderRadius: '20px', 
           border: '1px solid rgba(255,255,255,0.08)', 
-          marginBottom: '40px', 
+          marginBottom: isMobile ? '24px' : '40px', 
           display: 'flex', 
           gap: '8px',
-          overflowX: 'auto' 
+          overflowX: 'auto',
+          position: isMobile ? 'sticky' : 'static',
+          top: isMobile ? '8px' : 'auto',
+          zIndex: isMobile ? 50 : 'auto',
+          backdropFilter: isMobile ? 'blur(8px)' : 'none'
         }}>
           {['dashboard', 'teams', 'judge', 'settings', 'accounts', 'mailing'].map(tab => (
             <button 
               key={tab}
               className={activeTab === tab ? 'login-tab active' : 'login-tab'} 
-              style={{ flex: 1, textTransform: 'capitalize', padding: '12px 20px', fontSize: '0.95rem' }}
+              style={{ flex: isMobile ? '0 0 auto' : 1, minWidth: isMobile ? '120px' : 'auto', textTransform: 'capitalize', padding: isMobile ? '10px 14px' : '12px 20px', fontSize: isMobile ? '0.85rem' : '0.95rem', whiteSpace: 'nowrap' }}
               onClick={() => setActiveTab(tab)}
             >
               {tab === 'mailing' ? '📧 Mailing' : tab}
@@ -665,8 +753,8 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'teams' && (
-          <div className="grid two-col" style={{ gap: '32px', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))' }}>
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px' }}>
+          <div className="grid two-col" style={{ gap: isMobile ? '18px' : '32px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(350px, 1fr))' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '32px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Import Teams</h2>
               <div className="login-field">
                 <label style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: '12px' }}>Bulk Team Upload</label>
@@ -679,7 +767,7 @@ export default function AdminPage() {
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', marginTop: '8px', fontFamily: 'monospace', color: '#93c5fd', fontSize: '0.8rem' }}>
                   team_id, team_name, members_count, room_number, emails
                 </div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', marginTop: '12px' }}>
                   <button 
                     className="login-tab" 
                     style={{ flex: 1, fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)' }}
@@ -715,7 +803,7 @@ export default function AdminPage() {
               </div>
             </div>
             
-            <div className="login-auth-panel" style={{ background: 'rgba(15, 18, 30, 0.8)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', display: 'flex', flexDirection: 'column' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(15, 18, 30, 0.8)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '32px', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Activity Terminal</h2>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status ? '#60a5fa' : '#34d399', boxShadow: `0 0 10px ${status ? '#60a5fa' : '#34d399'}` }} />
@@ -746,7 +834,7 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', gridColumn: 'span 2' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '32px', gridColumn: isMobile ? 'span 1' : 'span 2' }}>
                <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Data Sources Management</h2>
                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem', marginBottom: '20px' }}>List of imported files and their teams</p>
                
@@ -782,11 +870,11 @@ export default function AdminPage() {
                </div>
             </div>
 
-            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '32px', gridColumn: 'span 2' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '32px', gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '12px' : 0, marginBottom: '24px' }}>
                 <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Master Team List ({teams.length})</h2>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                  <div className="login-input-wrap" style={{ width: '250px', background: 'rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto' }}>
+                  <div className="login-input-wrap" style={{ width: isMobile ? '100%' : '250px', background: 'rgba(0,0,0,0.2)' }}>
                     <span className="login-input-icon">🔍</span>
                     <input 
                       placeholder="Search ID or Name..." 
@@ -797,7 +885,7 @@ export default function AdminPage() {
                   </div>
                   <button 
                     onClick={() => setScanOpen(!scanOpen)} 
-                    style={{ background: scanOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: scanOpen ? '#f87171' : '#818cf8', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}
+                    style={{ width: isMobile ? '100%' : 'auto', background: scanOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: scanOpen ? '#f87171' : '#818cf8', border: 'none', padding: '12px 16px', borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}
                   >
                     {scanOpen ? 'Close Scanner' : '📷 Scan Failsafe'}
                   </button>
@@ -886,8 +974,8 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'judge' && (
-          <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px', alignItems: 'center' }}>
+          <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '20px' : '36px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: isMobile ? '20px' : '32px', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '14px' : 0 }}>
               <div>
                 <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, margin: 0 }}>Scoring Mastery Matrix</h2>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
@@ -913,7 +1001,7 @@ export default function AdminPage() {
                     onClick={() => {
                       const next = { ...rules, jury_mode: 'scan' }
                       setRules(next)
-                      updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() })
+                      updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))
                     }}
                     style={{ 
                       padding: '4px 12px', 
@@ -924,12 +1012,12 @@ export default function AdminPage() {
                       border: '1px solid ' + (rules.jury_mode === 'scan' ? 'rgba(99, 102, 241, 0.3)' : 'transparent'),
                       cursor: 'pointer'
                     }}
-                  >
+                      >
                     QR Scan Only
                   </button>
                 </div>
               </div>
-              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 240, 0.2)', color: '#60a5fa' }}>📥 Download Detailed Sheet</button>
+              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 240, 0.2)', color: '#60a5fa', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}>📥 Download Detailed Sheet</button>
             </div>
             
             <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
@@ -998,8 +1086,8 @@ export default function AdminPage() {
         {activeTab === 'accounts' && (
           <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: '36px' }}>
             <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>User Ecosystem ({accounts.length})</h2>
-            <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <table className="sheet-table">
+            <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table className="sheet-table" style={{ minWidth: 640 }}>
                 <thead>
                   <tr>
                     <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>User / Designation</th>
@@ -1008,32 +1096,35 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {accounts.map((acc) => (
-                    <tr key={acc.id} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <td style={{ padding: '18px' }}>
-                        <strong style={{ color: '#fff', display: 'block' }}>{acc.full_name}</strong>
-                        <span style={{ color: '#60a5fa', fontSize: '0.8rem', fontWeight: 700 }}>{acc.role}</span>
-                      </td>
-                      <td style={{ padding: '18px' }}>
-                        <span style={{ 
-                          padding: '4px 10px', 
-                          borderRadius: '8px', 
-                          fontSize: '0.75rem', 
-                          background: (acc.is_approved || acc.approved) ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                          color: (acc.is_approved || acc.approved) ? '#10b981' : '#f87171',
-                          fontWeight: 700
-                        }}>
-                          {(acc.is_approved || acc.approved) ? 'ACTIVE' : 'PENDING'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '18px', textAlign: 'right' }}>
-                        {!(acc.is_approved || acc.approved) && (
-                          <button onClick={() => handleApprove(acc.id)} className="login-tab active" style={{ padding: '6px 14px', fontSize: '0.8rem', marginRight: '8px' }}>Approve</button>
-                        )}
-                        <button onClick={() => handleDelete(acc.id)} className="login-tab" style={{ padding: '6px 14px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>Revoke</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {accounts.map((acc) => {
+                    const isApproved = !!(acc && (acc.status === 'approved' || acc.approved || acc.is_approved));
+                    return (
+                      <tr key={acc.id} className="sheet-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td style={{ padding: '18px' }}>
+                          <strong style={{ color: '#fff', display: 'block' }}>{acc.full_name}</strong>
+                          <span style={{ color: '#60a5fa', fontSize: '0.8rem', fontWeight: 700 }}>{acc.role}</span>
+                        </td>
+                        <td style={{ padding: '18px' }}>
+                          <span style={{ 
+                            padding: '4px 10px', 
+                            borderRadius: '8px', 
+                            fontSize: '0.75rem', 
+                            background: isApproved ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                            color: isApproved ? '#10b981' : '#f87171',
+                            fontWeight: 700
+                          }}>
+                            {isApproved ? 'ACTIVE' : 'PENDING'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '18px', textAlign: 'right' }}>
+                          {!isApproved && (
+                            <button onClick={() => handleApprove(acc.id)} className="login-tab active" style={{ padding: '6px 14px', fontSize: '0.8rem', marginRight: '8px' }}>Approve</button>
+                          )}
+                          <button onClick={() => handleReject(acc.id)} className="login-tab" style={{ padding: '6px 14px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>Revoke</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1067,7 +1158,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const next = { ...rules, jury_mode: 'manual' }
                         setRules(next)
-                        updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() })
+                        updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))
                       }}
                       className={`login-submit ${rules.jury_mode === 'manual' ? '' : 'secondary'}`}
                       style={{ padding: '12px', fontSize: '0.9rem', background: rules.jury_mode === 'manual' ? '#6366f1' : 'rgba(255,255,255,0.05)', color: rules.jury_mode === 'manual' ? '#fff' : 'rgba(255,255,255,0.4)', opacity: 1 }}
@@ -1078,7 +1169,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const next = { ...rules, jury_mode: 'scan' }
                         setRules(next)
-                        updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() })
+                        updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))
                       }}
                       className={`login-submit ${rules.jury_mode === 'scan' ? '' : 'secondary'}`}
                       style={{ padding: '12px', fontSize: '0.9rem', background: rules.jury_mode === 'scan' ? '#6366f1' : 'rgba(255,255,255,0.05)', color: rules.jury_mode === 'scan' ? '#fff' : 'rgba(255,255,255,0.4)', opacity: 1 }}
@@ -1213,19 +1304,19 @@ export default function AdminPage() {
         {activeTab === 'mailing' && (
           <div className="mailing-center" style={{ 
             display: 'grid', 
-            gridTemplateColumns: 'minmax(280px, 0.6fr) minmax(400px, 1fr) minmax(400px, 0.9fr)', 
-            gap: '24px',
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(280px, 0.6fr) minmax(400px, 1fr) minmax(400px, 0.9fr)', 
+            gap: isMobile ? '16px' : '24px',
             animation: 'fadeIn 0.5s ease-out',
             alignItems: 'start'
           }}>
             {/* Left: List Management & Preview */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '1 1 300px' }}>
-              <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
+              <div className="login-auth-panel" style={{ padding: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.02)' }}>
                 <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span>📋</span> Recipient List
                 </h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px' }}>
                     <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', background: '#6366f1', fontSize: '0.75rem' }}>
                       📁 New List
                       <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={(e) => handleRecipientImport(e, 'replace')} />
@@ -1240,16 +1331,11 @@ export default function AdminPage() {
                   </button>
                 </div>
 
-                {recipients.length > 0 && (
+                {recipients.length > 0 ? (
                   <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 600 }}>{recipients.length} Contacts</span>
-                      <button onClick={() => {
-                        setRecipients([]);
-                        setSelectedRecipients([]);
-                        setDeliveryStatus({});
-                        setPreviewIndex(0);
-                      }} style={{ color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>Clear All</button>
+                      <button onClick={() => { setRecipients([]); setSelectedRecipients([]); setDeliveryStatus({}); setPreviewIndex(0); }} style={{ color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>Clear All</button>
                     </div>
 
                     <div className="custom-scroll" style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -1297,10 +1383,12 @@ export default function AdminPage() {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* Scheduled Mails List */}
-              <div className="login-auth-panel" style={{ padding: '24px', background: 'rgba(255,255,255,0.02)' }}>
+              <div className="login-auth-panel" style={{ padding: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.02)' }}>
                 <h2 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '16px' }}>🕒 Scheduled Blasts ({scheduledMails.length})</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
                   {scheduledMails.map(m => (
@@ -1322,14 +1410,14 @@ export default function AdminPage() {
 
             {/* Middle: Composer */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div className="login-auth-panel" style={{ padding: '28px', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <div className="login-auth-panel" style={{ padding: isMobile ? '18px' : '28px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                   <h2 style={{ fontSize: '1.2rem', color: '#fff', margin: 0 }}>✍️ Creator Studio</h2>
                   <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Draft Auto-saved locally</span>
                 </div>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>From Name</label>
                       <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px' }} placeholder="e.g. LRNit Team" value={mailFromName} onChange={e => setMailFromName(e.target.value)} />
@@ -1392,7 +1480,7 @@ export default function AdminPage() {
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: '12px', alignItems: 'end' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(180px, 1fr) auto', gap: '12px', alignItems: 'end' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Event Branding</label>
                       <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -1465,7 +1553,7 @@ export default function AdminPage() {
                     onClick={() => handleSendCustomBatch()}
                     disabled={sendingCustom || (recipients.length === 0 && selectedRecipients.length === 0)}
                     className="login-submit"
-                    style={{ height: '46px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff', padding: '0 24px', fontSize: '0.9rem', marginTop: '12px' }}
+                    style={{ minHeight: '50px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff', padding: '0 24px', fontSize: isMobile ? '1rem' : '0.9rem', marginTop: '12px' }}
                   >
                     {sendingCustom ? '⏳ Sending...' : scheduledAt ? `Schedule Campaign` : selectedRecipients.length > 0 ? `🚀 Blast to ${selectedRecipients.length} Selected` : `🚀 Blast to All (${recipients.length})`}
                   </button>
@@ -1474,8 +1562,8 @@ export default function AdminPage() {
             </div>
 
             {/* Right: Unstop-style Live Preview */}
-            <div style={{ position: 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-               <div style={{ background: '#f8fafc', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', animation: 'fadeIn 0.5s ease-out' }}>
+            <div style={{ position: isMobile ? 'static' : 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ background: '#f8fafc', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', animation: 'fadeIn 0.5s ease-out' }}>
                   {/* Browser-like navigation bar */}
                   <div style={{ background: '#fff', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -1500,65 +1588,19 @@ export default function AdminPage() {
                   </div>
 
                   {/* The Email Wrapper */}
-                  <div style={{ padding: '24px', background: '#e2e8f0', minHeight: '500px', display: 'flex', justifyContent: 'center' }}>
-                     <div style={{ background: '#fff', width: '100%', maxWidth: '500px', borderRadius: '4px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                        {/* Email Banner Header */}
-                        <div style={{ background: '#1e293b', padding: '32px 24px', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                             {/* Fixed LRNit Branding */}
-                             <h2 style={{ color: '#fff', margin: 0, fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
-                               LRN<span style={{ color: '#60a5fa' }}>it</span>
-                             </h2>
-                             <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 800 }}>Learn · Build · Lead</div>
-                             
-                             {/* Optional Event Logo Below */}
-                             {rules.event_logo_url && (
-                               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', width: '100%', display: 'flex', justifyContent: 'center' }}>
-                                 <img src={rules.event_logo_url} alt="Event Logo" style={{ height: '40px', maxWidth: '180px', objectFit: 'contain' }} />
-                               </div>
-                             )}
-                          </div>
-                        </div>
-
-                        {/* Email Body */}
-                        <div style={{ padding: '32px 24px', fontFamily: 'Inter, Segoe UI, sans-serif' }}>
-                           <h1 style={{ color: '#111827', fontSize: '1.25rem', fontWeight: 700, marginBottom: '20px' }}>
-                             {getDynamicContent(mailSubject, recipients[previewIndex]) || '(No Subject)'}
-                           </h1>
-                           <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 20px 0' }}>
-                             Hi <strong>{recipients[previewIndex]?.name || '[Participant Name]'}</strong>,
-                           </p>
-                           <div style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                             {getDynamicContent(mailContent, recipients[previewIndex]) || 'Start writing your message in the composer to see the live preview here...'}
-                           </div>
-                            <div style={{ marginTop: '32px', borderTop: '1px solid #f3f4f6', paddingTop: '24px' }}>
-                               <div style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                                 {mailSignature || `Best Regards,\n${mailFromName || 'LRNit Team'}`}
-                               </div>
-                               {rules.event_logo_url && (
-                                 <img 
-                                   src={rules.event_logo_url} 
-                                   alt="Signature Logo" 
-                                   style={{ height: '32px', marginTop: '12px', opacity: 0.8, filter: 'grayscale(0.2)' }} 
-                                 />
-                               )}
-                            </div>
-                        </div>
-
-                        {/* Email Footer Banner */}
-                        <div style={{ background: '#f8fafc', padding: '32px 24px', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                             <div style={{ marginBottom: '12px' }}>
-                                <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
-                                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#3b82f6', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 900, fontSize: '1.1rem' }}>L</div>
-                                </div>
-                                <strong style={{ color: '#1e293b', fontSize: '0.9rem', display: 'block' }}>LRNit Mailing Platform</strong>
-                                <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '4px', lineHeight: '1.4' }}>Join our community of builders.</div>
-                             </div>
-                          </div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.65rem', marginTop: '24px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>© 2026 LRNit . All rights reserved</div>
-                        </div>
-                     </div>
+                  <div style={{ padding: isMobile ? '10px' : '24px', background: '#e2e8f0', minHeight: isMobile ? '380px' : '500px', display: 'flex', justifyContent: 'center' }}>
+                    <iframe
+                      title="Email preview"
+                      style={{ width: '100%', minHeight: isMobile ? '480px' : '640px', border: 'none', borderRadius: '12px', background: '#fff' }}
+                      srcDoc={buildEmailHtml({
+                        recipient: recipients[previewIndex],
+                        subject: getDynamicContent(mailSubject, recipients[previewIndex]),
+                        content: getDynamicContent(mailContent, recipients[previewIndex]),
+                        signature: mailSignature,
+                        fromName: mailFromName,
+                        eventLogoUrl: rules.event_logo_url,
+                      })}
+                    />
                   </div>
                </div>
                <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem', marginTop: '16px' }}>
