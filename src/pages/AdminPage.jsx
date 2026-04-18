@@ -978,7 +978,7 @@ export default function AdminPage() {
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: isMobile ? '20px' : '32px', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '14px' : 0 }}>
               <div>
                 <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, margin: 0 }}>Scoring Mastery Matrix</h2>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <div style={{ display: isMobile ? 'grid' : 'flex', gridTemplateColumns: isMobile ? '1fr 1fr' : undefined, gap: '8px', marginTop: '8px' }}>
                   <button 
                     onClick={() => { 
                       const next = { ...rules, jury_mode: 'manual' }
@@ -986,8 +986,8 @@ export default function AdminPage() {
                       updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() })
                     }}
                     style={{ 
-                      padding: '4px 12px', 
-                      fontSize: '0.75rem', 
+                      padding: isMobile ? '10px 12px' : '4px 12px', 
+                      fontSize: isMobile ? '0.85rem' : '0.75rem', 
                       borderRadius: '8px', 
                       background: rules.jury_mode === 'manual' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
                       color: rules.jury_mode === 'manual' ? '#818cf8' : 'rgba(255,255,255,0.3)',
@@ -1004,8 +1004,8 @@ export default function AdminPage() {
                       updateRules(next).then(() => { setStatus('Switched to QR Scan mode'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))
                     }}
                     style={{ 
-                      padding: '4px 12px', 
-                      fontSize: '0.75rem', 
+                      padding: isMobile ? '10px 12px' : '4px 12px', 
+                      fontSize: isMobile ? '0.85rem' : '0.75rem', 
                       borderRadius: '8px', 
                       background: rules.jury_mode === 'scan' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
                       color: rules.jury_mode === 'scan' ? '#818cf8' : 'rgba(255,255,255,0.3)',
@@ -1021,7 +1021,7 @@ export default function AdminPage() {
             </div>
             
             <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
-              <table className="sheet-table" style={{ minWidth: '1000px' }}>
+              <table className="sheet-table" style={{ minWidth: isMobile ? '720px' : '1000px', fontSize: isMobile ? '0.85rem' : undefined }}>
                 <thead>
                   <tr>
                     <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>Team</th>
@@ -1310,7 +1310,7 @@ export default function AdminPage() {
             alignItems: 'start'
           }}>
             {/* Left: List Management & Preview */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: '1 1 300px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '16px' : '24px', flex: '1 1 300px', order: isMobile ? 2 : 1 }}>
               <div className="login-auth-panel" style={{ padding: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.02)' }}>
                 <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span>📋</span> Recipient List
@@ -1338,7 +1338,7 @@ export default function AdminPage() {
                       <button onClick={() => { setRecipients([]); setSelectedRecipients([]); setDeliveryStatus({}); setPreviewIndex(0); }} style={{ color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>Clear All</button>
                     </div>
 
-                    <div className="custom-scroll" style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div className="custom-scroll" style={{ maxHeight: isMobile ? '280px' : '350px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                         <thead style={{ position: 'sticky', top: 0, background: '#1e293b', zIndex: 1 }}>
                           <tr>
@@ -1347,6 +1347,7 @@ export default function AdminPage() {
                                 type="checkbox" 
                                 checked={selectedRecipients.length === recipients.length} 
                                 onChange={(e) => setSelectedRecipients(e.target.checked ? recipients.map(r => r.email) : [])} 
+                                style={{ width: isMobile ? '18px' : undefined, height: isMobile ? '18px' : undefined }}
                               />
                             </th>
                             <th style={{ padding: '10px', textAlign: 'left', color: 'rgba(255,255,255,0.4)' }}>Participant</th>
@@ -1366,6 +1367,7 @@ export default function AdminPage() {
                                       if (e.target.checked) setSelectedRecipients([...selectedRecipients, r.email])
                                       else setSelectedRecipients(selectedRecipients.filter(id => id !== r.email))
                                     }} 
+                                    style={{ width: isMobile ? '18px' : undefined, height: isMobile ? '18px' : undefined }}
                                   />
                                 </td>
                                 <td style={{ padding: '8px 10px' }}>
@@ -1409,7 +1411,7 @@ export default function AdminPage() {
             </div>
 
             {/* Middle: Composer */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '16px' : '24px', order: isMobile ? 1 : 2 }}>
               <div className="login-auth-panel" style={{ padding: isMobile ? '18px' : '28px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                   <h2 style={{ fontSize: '1.2rem', color: '#fff', margin: 0 }}>✍️ Creator Studio</h2>
@@ -1562,10 +1564,10 @@ export default function AdminPage() {
             </div>
 
             {/* Right: Unstop-style Live Preview */}
-            <div style={{ position: isMobile ? 'static' : 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ position: isMobile ? 'static' : 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '16px', order: 3 }}>
               <div style={{ background: '#f8fafc', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', animation: 'fadeIn 0.5s ease-out' }}>
                   {/* Browser-like navigation bar */}
-                  <div style={{ background: '#fff', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ background: '#fff', padding: '10px 16px', display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', gap: '6px' }}>
                        {[1, 2, 3].map(i => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i===1 ? '#f87171' : i===2 ? '#fbbf24' : '#4ade80' }} />)}
                     </div>
@@ -1586,6 +1588,17 @@ export default function AdminPage() {
                       </div>
                     </div>
                   </div>
+
+                  {isMobile && (
+                    <div style={{ background: '#fff', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0' }}>
+                      <strong style={{ color: '#334155', fontSize: '0.85rem' }}>Live Mail Preview</strong>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button onClick={() => setPreviewIndex(prev => Math.max(0, prev - 1))} style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', padding: '4px 8px', cursor: 'pointer' }}>◀</button>
+                        <span style={{ color: '#334155', fontSize: '0.8rem', fontWeight: 700 }}>{recipients.length > 0 ? `${previewIndex + 1}/${recipients.length}` : '0/0'}</span>
+                        <button onClick={() => setPreviewIndex(prev => Math.min(recipients.length - 1, prev + 1))} style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', padding: '4px 8px', cursor: 'pointer' }}>▶</button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* The Email Wrapper */}
                   <div style={{ padding: isMobile ? '10px' : '24px', background: '#e2e8f0', minHeight: isMobile ? '380px' : '500px', display: 'flex', justifyContent: 'center' }}>
