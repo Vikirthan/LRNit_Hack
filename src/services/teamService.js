@@ -106,7 +106,16 @@ export async function saveRules(payload) {
       if (allowed.includes(k)) toUpsert[k] = payload[k]
     }
 
-    const { error } = await supabase.from('settings').upsert(toUpsert)
+    let { error } = await supabase.from('settings').upsert(toUpsert)
+
+    // Backward-compat: some deployed schemas don't have event_logo_url yet.
+    // On any failure, retry once without event_logo_url so core rules still persist.
+    if (error && Object.prototype.hasOwnProperty.call(toUpsert, 'event_logo_url')) {
+      const { event_logo_url, ...fallbackUpsert } = toUpsert
+      const retry = await supabase.from('settings').upsert(fallbackUpsert)
+      error = retry.error
+    }
+
     if (error) throw error
   } catch (err) {
     console.warn('saveRules: Supabase failed, rules saved locally only', err)

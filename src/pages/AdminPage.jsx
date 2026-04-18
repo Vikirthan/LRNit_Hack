@@ -35,7 +35,7 @@ export default function AdminPage() {
   const [rules, setRules] = useState({ 
     max_break_time: 15, 
     grace_time: 5, 
-    penalty_per_unit: 10,
+    penalty_per_minute: 1,
     is_active: true,
     jury_mode: 'manual'
   })
@@ -77,7 +77,12 @@ export default function AdminPage() {
       ])
       setTeams(t)
       setTeacherScores(s)
-      if (r) setRules(r)
+      if (r) {
+        setRules({
+          ...r,
+          penalty_per_minute: Number(r.penalty_per_minute ?? r.penalty_per_unit ?? 1),
+        })
+      }
       setAccounts(a)
       setLogs(l)
       if (sch.data) setScheduledMails(sch.data)
@@ -90,7 +95,12 @@ export default function AdminPage() {
     refresh()
     const unsub = subscribeToTeams(refresh)
     const unsubRules = subscribeToRules((newRules) => {
-      if (newRules) setRules(newRules)
+      if (newRules) {
+        setRules({
+          ...newRules,
+          penalty_per_minute: Number(newRules.penalty_per_minute ?? newRules.penalty_per_unit ?? 1),
+        })
+      }
     })
 
     // Load Draft
@@ -984,7 +994,7 @@ export default function AdminPage() {
                     onClick={() => { 
                       const next = { ...rules, jury_mode: 'manual' }
                       setRules(next)
-                      updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() })
+                      updateRules(next).then(() => { setStatus('Switched to Manual List mode'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))
                     }}
                     style={{ 
                       padding: isMobile ? '10px 12px' : '4px 12px', 
@@ -1186,21 +1196,21 @@ export default function AdminPage() {
                 </div>
 
                 <div className="login-field">
-                  <label style={{ color: '#fff', marginBottom: '8px' }}>Penalty per 5 mins (Marks)</label>
+                  <label style={{ color: '#fff', marginBottom: '8px' }}>Penalty per minute (Marks)</label>
                   <div className="login-input-wrap">
                      <span className="login-input-icon">⚠️</span>
-                     <input type="number" value={rules.penalty_per_unit || 0} onChange={(e) => setRules({...rules, penalty_per_unit: Number(e.target.value)})} />
+                    <input type="number" value={rules.penalty_per_minute || 0} onChange={(e) => setRules({...rules, penalty_per_minute: Number(e.target.value)})} />
                   </div>
                 </div>
 
                 <div style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.1)', overflowWrap: 'anywhere' }}>
                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem' }}>
-                     <strong>Logic:</strong> Teams will be penalized {rules.penalty_per_unit} marks for every 5-minute block they exceed beyond the {rules.max_break_time} min limit.
+                     <strong>Logic:</strong> Teams will be penalized {rules.penalty_per_minute} marks for every minute they exceed beyond the {rules.max_break_time} min limit.
                    </p>
                 </div>
 
                 <button 
-                  onClick={() => updateRules({...rules, is_active: true}).then(() => { setStatus('Protocol updated and activated'); refresh() })}
+                  onClick={() => updateRules({...rules, is_active: true}).then(() => { setStatus('Protocol updated and activated'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))}
                   className="login-submit" 
                   style={{ width: '100%', marginTop: '16px' }}
                 >
@@ -1224,7 +1234,7 @@ export default function AdminPage() {
                     <tr className="sheet-row">
                       <td style={{ padding: '16px' }}>
                         <strong style={{ color: '#fff', display: 'block' }}>Hackathon Standard</strong>
-                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>{rules.max_break_time}m limit · {rules.penalty_per_unit}pts / 5m</span>
+                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>{rules.max_break_time}m limit · {rules.penalty_per_minute}pts / min</span>
                       </td>
                       <td style={{ padding: '16px' }}>
                         <span style={{ 
@@ -1240,7 +1250,7 @@ export default function AdminPage() {
                       </td>
                       <td style={{ padding: '16px', textAlign: 'right' }}>
                         <button 
-                          onClick={() => updateRules({...rules, is_active: !rules.is_active}).then(() => { setStatus(rules.is_active ? 'Protocol Deactivated' : 'Protocol Activated'); refresh() })}
+                          onClick={() => updateRules({...rules, is_active: !rules.is_active}).then(() => { setStatus(rules.is_active ? 'Protocol Deactivated' : 'Protocol Activated'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))}
                           className="login-tab" 
                           style={{ padding: '6px 14px', fontSize: '0.8rem', background: rules.is_active ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', color: rules.is_active ? '#f87171' : '#60a5fa' }}
                         >
