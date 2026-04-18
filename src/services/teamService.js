@@ -82,7 +82,9 @@ export async function getRules() {
   try {
     const { data, error } = await supabase.from('settings').select('*').eq('key', 'rules').maybeSingle()
     if (error) throw error
-    const merged = data ? { ...defaultRules, ...data } : { ...defaultRules }
+    // In mixed-schema deployments, prefer local cache so unsupported DB columns
+    // do not revert UI values after save.
+    const merged = data ? { ...defaultRules, ...data, ...readLocalRules() } : { ...readLocalRules() }
     writeLocalRules(merged) // cache locally
     return merged
   } catch (err) {
@@ -568,7 +570,8 @@ export function subscribeToRules(onUpdate) {
   const channel = supabase
     .channel('public:settings')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.rules' }, async (payload) => {
-      const merged = { ...defaultRules, ...payload.new }
+      // Keep local compatibility values from being overwritten by partial DB rows.
+      const merged = { ...defaultRules, ...payload.new, ...readLocalRules() }
       writeLocalRules(merged)
       onUpdate(merged)
     })
