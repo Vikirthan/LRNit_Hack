@@ -1,0 +1,20 @@
+{
+  "name": "TicketScan - Hackathon Break Tracker",
+  "short_name": "TicketScan",
+  "description": "24-hour hackathon attendance and break tracking app",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0b0f1a",
+  "background_color": "#0b0f1a",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

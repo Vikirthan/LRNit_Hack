@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Activity, AlertTriangle, Bell, CheckCircle2, Download, LoaderCircle, Lock, Mail, Radar, RotateCcw, Search, ShieldCheck, Trash2, Unlock, UserRoundCheck, Wrench, XCircle } from 'lucide-react'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
 import { 
@@ -14,8 +15,10 @@ import {
   generateTeamQrToken,
   deleteTeamsBySource,
   verifyScanToken,
-  subscribeToRules
+  subscribeToRules,
+  setTeamVerificationLocks
 } from '../services/teamService'
+import { TEACHER_CRITERIA } from '../constants/teacherCriteria'
 import { parseTeamFile, parseRecipientFile } from '../services/csvService'
 import { sendCustomEmail } from '../services/supabaseFunctions'
 import { supabase } from '../config/supabase'
@@ -46,6 +49,7 @@ export default function AdminPage() {
   const [importing, setImporting] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [verifyingTeamId, setVerifyingTeamId] = useState(null)
   
   // Mailing Center States
   const [recipients, setRecipients] = useState([])
@@ -163,6 +167,8 @@ export default function AdminPage() {
     const safeContent = withBreaks(content || '')
     const safeSignature = withBreaks(signature || `Best Regards,\n${fromName || 'LRNit Team'}`)
     const safeLogoUrl = eventLogoUrl ? escapeHtml(eventLogoUrl) : ''
+    const safeFooterLogoUrl = escapeHtml(`${window.location.origin}/icons.svg`)
+    const safeFooterBrandLogoUrl = safeLogoUrl || safeFooterLogoUrl
 
     return `
 <!DOCTYPE html>
@@ -179,12 +185,7 @@ export default function AdminPage() {
   <div style="max-width:550px;margin:40px auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
     <div style="background-color:#1e293b;padding:32px 24px;text-align:center;">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-        <h2 style="color:#ffffff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.02em;">LRN<span style="color:#60a5fa;">it</span></h2>
-        <div style="margin-top:8px;color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.2em;font-weight:800;">Learn · Build · Lead</div>
-        ${safeLogoUrl ? `
-        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.1);width:100%;">
-          <img src="${safeLogoUrl}" alt="Event Logo" style="height:40px;max-width:180px;object-fit:contain;" />
-        </div>` : ''}
+        <h2 style="color:#ffffff;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em;">LRN<span style="color:#60a5fa;">it</span> - <span style="color:rgba(255,255,255,0.75);font-size:16px;font-weight:700;">Learn.Build.Lead</span></h2>
       </div>
     </div>
     <div style="padding:32px 24px;">
@@ -198,9 +199,8 @@ export default function AdminPage() {
     </div>
     <div style="background-color:#f8fafc;padding:32px 24px;border-top:1px solid #f1f5f9;text-align:center;">
       <div style="margin-bottom:12px;">
-        <div style="width:40px;height:40px;margin:0 auto 16px auto;background-color:#3b82f6;border-radius:10px;display:table;text-align:center;"><span style="display:table-cell;vertical-align:middle;color:#ffffff;font-size:18px;font-weight:900;">L</span></div>
+        <img src="${safeFooterBrandLogoUrl}" alt="LRNit Logo" style="height:48px;max-width:120px;object-fit:contain;margin:0 auto 16px auto;display:block;" />
         <strong style="color:#1e293b;font-size:14px;">LRNit Mailing Platform</strong>
-        <div style="color:#64748b;font-size:12px;margin-top:4px;">Join our community of builders.</div>
       </div>
       <div style="color:#94a3b8;font-size:10px;margin-top:24px;border-top:1px solid #f1f5f9;padding-top:16px;">© 2026 LRNit. All rights reserved.</div>
     </div>
@@ -221,7 +221,7 @@ export default function AdminPage() {
       
       setStatus(`Importing ${parsed.length} teams from ${file.name}...`)
       await upsertTeams(teamsWithSource)
-      setStatus(`✓ Successfully imported ${parsed.length} teams from ${file.name}`)
+      setStatus(`Successfully imported ${parsed.length} teams from ${file.name}`)
       refresh()
     } catch (err) {
       setStatus(`Import failed: ${err.message}`)
@@ -235,7 +235,7 @@ export default function AdminPage() {
     
     let success = 0
     let fail = 0
-    setStatus(`🚀 Starting bulk mailing for ${teams.length} teams...`)
+    setStatus(`Starting bulk mailing for ${teams.length} teams...`)
 
     for (const t of teams) {
       try {
@@ -244,12 +244,12 @@ export default function AdminPage() {
         }
 
         if (!t.qr_token) {
-          setStatus(`🛠️ Generating missing token for ${t.team_id}...`)
+          setStatus(`Generating missing token for ${t.team_id}...`)
           const res = await generateTeamQrToken(t.team_id)
           t.qr_token = res.token
         }
         
-        setStatus(`📧 Sending QR to ${t.team_id} (${t.team_name})...`)
+        setStatus(`Sending QR to ${t.team_id} (${t.team_name})...`)
         // Pass origin to fix 404 issues
         const res = await sendQrEmails(t.team_id, window.location.origin)
         
@@ -258,16 +258,16 @@ export default function AdminPage() {
         }
 
         success++
-        setStatus(`✅ Sent ${success}/${teams.length}... (${t.team_id})`)
+        setStatus(`Sent ${success}/${teams.length}... (${t.team_id})`)
       } catch (err) {
         console.error(`BulkMail error for ${t.team_id}:`, err)
         fail++
-        setStatus(`⚠️ FAILED ${t.team_id}: ${err.message}`)
+        setStatus(`Failed ${t.team_id}: ${err.message}`)
         await new Promise(r => setTimeout(r, 1000))
       }
     }
     
-    setStatus(`🏁 Mailing Finished. Success: ${success}, Failed: ${fail}.`)
+    setStatus(`Mailing finished. Success: ${success}, Failed: ${fail}.`)
     refresh()
   }
 
@@ -283,31 +283,31 @@ export default function AdminPage() {
 
     if (!window.confirm(`Send "Report to Arena" alert to ${alertable.length} absent teams?${noEmails > 0 ? `\n\nNote: ${noEmails} teams have no emails and will be skipped.` : ''}`)) return
     
-    setStatus(`📢 Alerting ${alertable.length} absent teams...`)
+    setStatus(`Alerting ${alertable.length} absent teams...`)
     let success = 0
     let fail = 0
 
     for (const t of alertable) {
       try {
-        setStatus(`📬 Alerting ${t.team_name}...`)
+        setStatus(`Alerting ${t.team_name}...`)
         const res = await sendAbsentAlert(t.team_id, window.location.origin)
         if (res?.success) {
           success++
-          setStatus(`✅ Sent ${success}/${alertable.length}... (${t.team_id})`)
+          setStatus(`Sent ${success}/${alertable.length}... (${t.team_id})`)
         } else {
           console.error(`Alert failed for ${t.team_id}:`, res?.error)
           fail++
-          setStatus(`⚠️ FAILED ${t.team_id}: ${res?.error || 'Unknown error'}`)
+          setStatus(`Failed ${t.team_id}: ${res?.error || 'Unknown error'}`)
           await new Promise(r => setTimeout(r, 1000))
         }
       } catch (err) {
         console.error(`Alert error for ${t.team_id}:`, err)
         fail++
-        setStatus(`❌ ERROR ${t.team_id}: ${err.message}`)
+        setStatus(`Error ${t.team_id}: ${err.message}`)
         await new Promise(r => setTimeout(r, 1000))
       }
     }
-    setStatus(`✅ Alert Campaign Finished! Sent: ${success}, Failed: ${fail}`)
+    setStatus(`Alert campaign finished. Sent: ${success}, Failed: ${fail}`)
     if (noEmails > 0) {
       setStatus(prev => prev + ` (${noEmails} skipped - no emails)`)
     }
@@ -330,7 +330,7 @@ export default function AdminPage() {
         fail++
       }
     }
-    setStatus(`✅ Token generation complete: ${success} successful, ${fail} failed.`)
+    setStatus(`Token generation complete: ${success} successful, ${fail} failed.`)
     refresh()
   }
 
@@ -377,7 +377,7 @@ export default function AdminPage() {
     try {
       setStatus(`Deleting teams from source: ${sourceFile}...`)
       await deleteTeamsBySource(sourceFile)
-      setStatus(`✓ Deleted all teams from ${sourceFile}`)
+      setStatus(`Deleted all teams from ${sourceFile}`)
       refresh()
     } catch (err) {
       setStatus(`Delete failed: ${err.message}`)
@@ -386,17 +386,17 @@ export default function AdminPage() {
 
   const onScanFailsafe = async (token) => {
     setProcessing(true)
-    setStatus('⌛ Scanning team QR...')
+    setStatus('Scanning team QR...')
     try {
       const found = await verifyScanToken(token)
       if ('vibrate' in navigator) navigator.vibrate(100)
-      setStatus(`✅ Team Found: ${found.team_name} (ID: ${found.team_id}). Search completed.`)
+      setStatus(`Team found: ${found.team_name} (ID: ${found.team_id}). Search completed.`)
       
       // Auto-filter or highlight logic could go here, but for now just show team info
       window.alert(`Team Found!\nName: ${found.team_name}\nID: ${found.team_id}\nRoom: ${found.room_number}`)
       setScanOpen(false)
     } catch (err) {
-      setStatus(`❌ Scan Error: ${err.message}`)
+      setStatus(`Scan error: ${err.message}`)
     } finally {
       setProcessing(false)
     }
@@ -411,10 +411,10 @@ export default function AdminPage() {
       if (mode === 'append') {
         const uniqueNewData = data.filter(newItem => !recipients.some(oldItem => oldItem.email === newItem.email))
         setRecipients(prev => [...prev, ...uniqueNewData])
-        setStatus(`✓ Appended ${uniqueNewData.length} new recipients.`)
+        setStatus(`Appended ${uniqueNewData.length} new recipients.`)
       } else {
         setRecipients(data)
-        setStatus(`✓ Loaded ${data.length} recipients.`)
+        setStatus(`Loaded ${data.length} recipients.`)
       }
       setSelectedRecipients([]) // Reset selection on major changes
     } catch (err) {
@@ -463,7 +463,7 @@ export default function AdminPage() {
           status: 'pending'
         })
         if (error) throw error
-        alert("✅ Email blast scheduled successfully!")
+        alert('Email blast scheduled successfully!')
         setScheduledAt('')
         refresh()
       } catch (err) {
@@ -482,46 +482,50 @@ export default function AdminPage() {
     const newStatus = { ...deliveryStatus }
     setStatus(`📨 Starting custom batch mailing...`)
 
-    for (let i = 0; i < targetList.length; i++) {
-        const r = targetList[i]
-        try {
-            setStatus(`📫 Sending to ${r.name || r.email} (${i+1}/${targetList.length})...`)
-            const res = await sendCustomEmail({
-                email: r.email,
-                name: r.name,
-                subject: getDynamicContent(mailSubject, r),
-                content: getDynamicContent(mailContent, r),
-                signature: mailSignature,
-                fromEmail: mailFromEmail,
-                fromName: mailFromName,
-                eventLogoUrl: rules.event_logo_url,
-                htmlContent: buildEmailHtml({
-                  recipient: r,
+    try {
+      for (let i = 0; i < targetList.length; i++) {
+          const r = targetList[i]
+          try {
+              setStatus(`📫 Sending to ${r.name || r.email} (${i + 1}/${targetList.length})...`)
+              const res = await sendCustomEmail({
+                  email: r.email,
+                  name: r.name,
                   subject: getDynamicContent(mailSubject, r),
                   content: getDynamicContent(mailContent, r),
                   signature: mailSignature,
+                  fromEmail: mailFromEmail,
                   fromName: mailFromName,
                   eventLogoUrl: rules.event_logo_url,
-                })
-            })
-            
-            if (res?.success) {
-              success++
-              newStatus[r.email] = { status: 'success', name: r.name }
-            } else {
-              throw new Error(res?.error || "Unknown error")
-            }
-        } catch (err) {
-            fail++
-            console.error(`Mailing error for ${r.email}:`, err)
-            newStatus[r.email] = { status: 'failed', name: r.name, error: err.message }
-        }
-        setDeliveryStatus({ ...newStatus }) // Update live
-    }
+                  htmlContent: buildEmailHtml({
+                    recipient: r,
+                    subject: getDynamicContent(mailSubject, r),
+                    content: getDynamicContent(mailContent, r),
+                    signature: mailSignature,
+                    fromName: mailFromName,
+                    eventLogoUrl: rules.event_logo_url,
+                  })
+              })
 
-    alert(`Mailing Complete!\n✓ Success: ${success}\n✖ Failed: ${fail}`)
-    setSendingCustom(false)
-    refresh()
+              if (res?.success) {
+                success++
+                newStatus[r.email] = { status: 'success', name: r.name }
+              } else {
+                throw new Error(res?.error || 'Unknown error')
+              }
+          } catch (err) {
+              fail++
+              console.error(`Mailing error for ${r.email}:`, err)
+              newStatus[r.email] = { status: 'failed', name: r.name, error: err.message }
+          }
+          setDeliveryStatus({ ...newStatus }) // Update live
+      }
+
+      setStatus(`✅ Mailing complete. Success: ${success}, Failed: ${fail}.`)
+      alert(`Mailing Complete!\n✓ Success: ${success}\n✖ Failed: ${fail}`)
+      refresh()
+    } finally {
+      setSendingCustom(false)
+    }
   }
 
   const deleteScheduledEmail = async (id) => {
@@ -570,6 +574,26 @@ export default function AdminPage() {
     saveAs(fileData, `TicketScan_MasterTeams_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
+  const githubMax = TEACHER_CRITERIA.find(c => c.key === 'github')?.max || 10
+  const documentationMax = TEACHER_CRITERIA.find(c => c.key === 'documentation')?.max || 10
+
+  const getAdjustedTeacherTotal = (score, team) => {
+    if (!score) return 0
+
+    // Recompute from individual criteria instead of persisted total.
+    // This avoids stale totals and guarantees GitHub + Documentation scoring is included.
+    return TEACHER_CRITERIA.reduce((sum, criterion) => {
+      const key = criterion.key
+      let value = Number(score[key]) || 0
+
+      if (key === 'github' && team?.github_verified) value = githubMax
+      if (key === 'documentation' && team?.documentation_verified) value = documentationMax
+
+      const bounded = Math.max(0, Math.min(criterion.max, value))
+      return sum + bounded
+    }, 0)
+  }
+
   const exportScoresToExcel = () => {
     // Pivot data for export
     const teamMap = new Map()
@@ -577,6 +601,8 @@ export default function AdminPage() {
       name: t.team_name, 
       id: t.team_id, 
       penalty: t.penalty_points || 0,
+      github_verified: !!t.github_verified,
+      documentation_verified: !!t.documentation_verified,
       scores: {} 
     }))
 
@@ -585,14 +611,16 @@ export default function AdminPage() {
     teacherScores.forEach(s => {
       const entry = teamMap.get(s.team_id)
       if (entry) {
-        entry.scores[s.teacher_name] = s.total
+        entry.scores[s.teacher_name] = getAdjustedTeacherTotal(s, entry)
       }
     })
 
     const exportData = Array.from(teamMap.values()).map(entry => {
       const row = {
         'Team ID': entry.id,
-        'Team Name': entry.name
+        'Team Name': entry.name,
+        'GitHub Verified': entry.github_verified ? 'Yes' : 'No',
+        'Documentation Verified': entry.documentation_verified ? 'Yes' : 'No',
       }
       
       let sum = 0
@@ -623,6 +651,30 @@ export default function AdminPage() {
     saveAs(fileData, `TicketScan_DetailedScores_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
+  const handleVerificationToggle = async (team, field) => {
+    const nextValue = !team[field]
+    const previousTeams = teams
+    const optimisticTeams = teams.map(item =>
+      item.team_id === team.team_id ? { ...item, [field]: nextValue } : item
+    )
+    setTeams(optimisticTeams)
+    setVerifyingTeamId(team.team_id)
+
+    try {
+      const payload = {
+        githubVerified: field === 'github_verified' ? nextValue : !!team.github_verified,
+        documentationVerified: field === 'documentation_verified' ? nextValue : !!team.documentation_verified,
+      }
+      const result = await setTeamVerificationLocks(team.team_id, payload)
+      setStatus(result.persisted ? 'Verification saved in backend' : 'Saved locally. Add DB columns for backend persistence.')
+    } catch (err) {
+      setTeams(previousTeams)
+      setStatus(`Failed to update verification: ${err.message}`)
+    } finally {
+      setVerifyingTeamId(null)
+    }
+  }
+
   const activeOut = teams.filter(t => t.active_out)
   const filteredTeams = teams.filter(t => 
     t.team_name.toLowerCase().includes(teamFilter.toLowerCase()) || 
@@ -638,7 +690,7 @@ export default function AdminPage() {
       <main className="layout admin-layout" style={{ position: 'relative', zIndex: 1, maxWidth: isMobile ? '100%' : '1400px' }}>
         <header className="topbar" style={{ padding: isMobile ? '12px 0 16px' : '24px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: isMobile ? '20px' : '32px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '14px' : undefined }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', width: isMobile ? '100%' : 'auto' }}>
-            <div className="login-feature-icon" style={{ width: '48px', height: '48px', fontSize: '1.4rem', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>⚡</div>
+            <div className="login-feature-icon" style={{ width: '48px', height: '48px', fontSize: '1.4rem' }}><ShieldCheck size={20} /></div>
             <h1 style={{ color: '#fff', fontSize: isMobile ? '1.35rem' : '1.8rem', margin: 0 }}>Command <span>Center</span></h1>
           </div>
           <div className="topbar-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
@@ -669,7 +721,7 @@ export default function AdminPage() {
               style={{ flex: isMobile ? '1 1 calc(33.33% - 8px)' : 1, minWidth: isMobile ? 'unset' : 'auto', textTransform: 'capitalize', padding: isMobile ? '10px 12px' : '12px 20px', fontSize: isMobile ? '0.85rem' : '0.95rem', whiteSpace: 'nowrap' }}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'mailing' ? '📧 Mailing' : tab}
+              {tab === 'mailing' ? <span className="icon-label"><Mail size={15} /> Mailing</span> : tab}
             </button>
           ))}
         </nav>
@@ -806,10 +858,10 @@ export default function AdminPage() {
                     XLSX Template
                   </button>
                 </div>
-                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%', boxShadow: 'none' }} onClick={onGenerateAllTokens}>🛠️ Generate/Repair ALL Tokens</button>
-                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%', boxShadow: 'none' }} onClick={onBulkMail}>📧 Send QRs to ALL Teams</button>
-                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', width: '100%', boxShadow: 'none' }} onClick={onAlertAwayTeams}>📢 Alert Absent Teams to Arena</button>
-                <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)', boxShadow: 'none' }} onClick={exportToExcel}>📥 Export Master Excel (with QRs)</button>
+                <button className="login-submit" style={{ marginTop: '16px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', width: '100%', boxShadow: 'none' }} onClick={onGenerateAllTokens}><span className="icon-label" style={{ justifyContent: 'center' }}><Wrench size={16} /> Generate and Repair All Tokens</span></button>
+                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', width: '100%', boxShadow: 'none' }} onClick={onBulkMail}><span className="icon-label" style={{ justifyContent: 'center' }}><Mail size={16} /> Send QRs to All Teams</span></button>
+                <button className="login-submit" style={{ marginTop: '12px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', width: '100%', boxShadow: 'none' }} onClick={onAlertAwayTeams}><span className="icon-label" style={{ justifyContent: 'center' }}><Bell size={16} /> Alert Absent Teams to Arena</span></button>
+                <button className="login-submit" style={{ marginTop: '16px', width: '100%', background: 'rgba(16, 185, 129, 0.1)', boxShadow: 'none' }} onClick={exportToExcel}><span className="icon-label" style={{ justifyContent: 'center' }}><Download size={16} /> Export Master Excel (with QRs)</span></button>
                 <button className="login-submit" style={{ marginTop: '12px', width: '100%', boxShadow: 'none' }} onClick={() => refresh()}>Force Sync Display</button>
               </div>
             </div>
@@ -822,13 +874,13 @@ export default function AdminPage() {
               <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)', borderRadius: '20px', padding: '24px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
                 {status ? (
                   <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '16px' }}>⚙️</div>
+                    <div style={{ fontSize: '2rem', marginBottom: '16px', display: 'grid', placeItems: 'center', color: '#60a5fa' }}><Activity size={28} /></div>
                     <p style={{ color: '#60a5fa', fontSize: '1.1rem', fontWeight: 600, lineHeight: 1.5, maxWidth: '300px' }}>{status}</p>
                     <button className="login-tab" style={{ marginTop: '20px', fontSize: '0.75rem' }} onClick={() => setStatus('')}>Clear Log</button>
                   </div>
                 ) : (
                   <div style={{ opacity: 0.3 }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '16px' }}>📡</div>
+                    <div style={{ fontSize: '2rem', marginBottom: '16px', display: 'grid', placeItems: 'center' }}><Radar size={28} /></div>
                     <p style={{ color: '#fff', fontSize: '0.9rem' }}>Waiting for system events...</p>
                   </div>
                 )}
@@ -872,7 +924,7 @@ export default function AdminPage() {
                              fontWeight: 600
                            }}
                          >
-                           🗑️ Erase
+                           <span className="icon-label"><Trash2 size={14} /> Erase</span>
                          </button>
                        )}
                      </div>
@@ -886,7 +938,7 @@ export default function AdminPage() {
                 <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Master Team List ({teams.length})</h2>
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto' }}>
                   <div className="login-input-wrap" style={{ width: isMobile ? '100%' : '250px', background: 'rgba(0,0,0,0.2)' }}>
-                    <span className="login-input-icon">🔍</span>
+                    <span className="login-input-icon"><Search size={14} /></span>
                     <input 
                       placeholder="Search ID or Name..." 
                       value={teamFilter}
@@ -898,7 +950,7 @@ export default function AdminPage() {
                     onClick={() => setScanOpen(!scanOpen)} 
                     style={{ width: isMobile ? '100%' : 'auto', background: scanOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: scanOpen ? '#f87171' : '#818cf8', border: 'none', padding: '12px 16px', borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}
                   >
-                    {scanOpen ? 'Close Scanner' : '📷 Scan Failsafe'}
+                    <span className="icon-label" style={{ justifyContent: 'center' }}>{scanOpen ? 'Close Scanner' : <><Radar size={15} /> Scan Failsafe</>}</span>
                   </button>
                 </div>
               </div>
@@ -928,9 +980,9 @@ export default function AdminPage() {
                         <td style={{ padding: '16px' }}>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             {t.qr_token ? (
-                              <span title="Token Generated" style={{ color: '#34d399', fontSize: '0.9rem', background: 'rgba(52, 211, 153, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🔑 SECURE</span>
+                              <span title="Token Generated" style={{ color: '#34d399', fontSize: '0.9rem', background: 'rgba(52, 211, 153, 0.1)', padding: '4px 8px', borderRadius: '6px' }}><span className="icon-label"><UserRoundCheck size={14} /> SECURE</span></span>
                             ) : (
-                              <span title="No Token" style={{ color: '#f87171', fontSize: '0.9rem', background: 'rgba(248, 113, 113, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🚫 NO TOKEN</span>
+                              <span title="No Token" style={{ color: '#f87171', fontSize: '0.9rem', background: 'rgba(248, 113, 113, 0.1)', padding: '4px 8px', borderRadius: '6px' }}><span className="icon-label"><XCircle size={14} /> NO TOKEN</span></span>
                             )}
                           </div>
                         </td>
@@ -947,7 +999,7 @@ export default function AdminPage() {
                                padding: '4px 10px',
                                borderRadius: '8px'
                              }}>
-                               📧 {t.email_count || 0} Emails
+                               <Mail size={14} /> {t.email_count || 0} Emails
                              </span>
                           </div>
                         </td>
@@ -1028,14 +1080,16 @@ export default function AdminPage() {
                   </button>
                 </div>
               </div>
-              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 240, 0.2)', color: '#60a5fa', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}>📥 Download Detailed Sheet</button>
+              <button onClick={exportScoresToExcel} className="login-tab active" style={{ background: 'rgba(96, 165, 240, 0.2)', color: '#60a5fa', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}><span className="icon-label" style={{ justifyContent: 'center' }}><Download size={15} /> Download Detailed Sheet</span></button>
             </div>
             
             <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
-              <table className="sheet-table" style={{ minWidth: isMobile ? '720px' : '1000px', fontSize: isMobile ? '0.85rem' : undefined }}>
+              <table className="sheet-table" style={{ minWidth: isMobile ? '920px' : '1150px', fontSize: isMobile ? '0.85rem' : undefined }}>
                 <thead>
                   <tr>
                     <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '18px' }}>Team</th>
+                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '18px' }}>GitHub Lock</th>
+                    <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '18px' }}>Docs Lock</th>
                     {[...new Set(teacherScores.map(s => s.teacher_name))].length > 0 ? (
                       [...new Set(teacherScores.map(s => s.teacher_name))].map(name => (
                         <th key={name} style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>{name}</th>
@@ -1062,16 +1116,42 @@ export default function AdminPage() {
                           <strong>{t.team_name}</strong>
                           <span style={{ display: 'block', color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>{t.team_id}</span>
                         </td>
+
+                        <td style={{ textAlign: 'center', padding: '18px' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '0.8rem', cursor: verifyingTeamId === t.team_id ? 'not-allowed' : 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!t.github_verified}
+                              disabled={verifyingTeamId === t.team_id}
+                              onChange={() => handleVerificationToggle(t, 'github_verified')}
+                              style={{ width: '16px', height: '16px' }}
+                            />
+                            {t.github_verified ? `${githubMax}/${githubMax}` : 'Auto'}
+                          </label>
+                        </td>
+
+                        <td style={{ textAlign: 'center', padding: '18px' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '0.8rem', cursor: verifyingTeamId === t.team_id ? 'not-allowed' : 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!t.documentation_verified}
+                              disabled={verifyingTeamId === t.team_id}
+                              onChange={() => handleVerificationToggle(t, 'documentation_verified')}
+                              style={{ width: '16px', height: '16px' }}
+                            />
+                            {t.documentation_verified ? `${documentationMax}/${documentationMax}` : 'Auto'}
+                          </label>
+                        </td>
                         
                         {juryNames.map(name => {
                           const s = teamScores.find(sc => sc.teacher_name === name)
                           if (s) {
-                            sum += s.total
+                            sum += getAdjustedTeacherTotal(s, t)
                             count++
                           }
                           return (
                             <td key={name} style={{ textAlign: 'center', color: s ? '#fff' : 'rgba(255,255,255,0.1)' }}>
-                              {s ? s.total : '-'}
+                              {s ? getAdjustedTeacherTotal(s, t).toFixed(1) : '-'}
                             </td>
                           )
                         })}
@@ -1190,15 +1270,15 @@ export default function AdminPage() {
                   </div>
                   <p className="muted" style={{ marginTop: '12px', fontSize: '0.8rem' }}>
                     {rules.jury_mode === 'scan' 
-                      ? '🔒 Mandatory: Jury must scan team QR code to grade.' 
-                      : '🔓 Flexible: Jury can pick teams from a searchable list.'}
+                      ? <span className="icon-label"><Lock size={13} /> Mandatory: Jury must scan team QR code to grade.</span>
+                      : <span className="icon-label"><Unlock size={13} /> Flexible: Jury can pick teams from a searchable list.</span>}
                   </p>
                 </div>
 
                 <div className="login-field">
                   <label style={{ color: '#fff', marginBottom: '8px' }}>Penalty per minute (Marks)</label>
                   <div className="login-input-wrap">
-                     <span className="login-input-icon">⚠️</span>
+                     <span className="login-input-icon"><AlertTriangle size={14} /></span>
                     <input type="number" value={rules.penalty_per_minute || 0} onChange={(e) => setRules({...rules, penalty_per_minute: Number(e.target.value)})} />
                   </div>
                 </div>
@@ -1324,21 +1404,21 @@ export default function AdminPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '16px' : '24px', flex: '1 1 300px', order: isMobile ? 2 : 1 }}>
               <div className="login-auth-panel" style={{ padding: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.02)' }}>
                 <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span>📋</span> Recipient List
+                  <span className="icon-label"><Mail size={16} /> Recipient List</span>
                 </h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px' }}>
                     <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', background: '#6366f1', fontSize: '0.75rem' }}>
-                      📁 New List
+                      New List
                       <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={(e) => handleRecipientImport(e, 'replace')} />
                     </label>
                     <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.3)', fontSize: '0.75rem' }}>
-                      ➕ Append
+                      Append
                       <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={(e) => handleRecipientImport(e, 'append')} />
                     </label>
                   </div>
                   <button onClick={downloadMailingTemplate} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '10px', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', marginTop: '4px' }}>
-                    📥 Download Sample Template
+                    <span className="icon-label" style={{ justifyContent: 'center' }}><Download size={14} /> Download Sample Template</span>
                   </button>
                 </div>
 
@@ -1386,8 +1466,8 @@ export default function AdminPage() {
                                   <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>{r.email}</div>
                                 </td>
                                 <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                                  {status?.status === 'success' && <span title="Sent Successfully">✅</span>}
-                                  {status?.status === 'failed' && <span title={status.error} style={{ cursor: 'help' }}>❌</span>}
+                                  {status?.status === 'success' && <span title="Sent Successfully"><CheckCircle2 size={15} color="#34d399" /></span>}
+                                  {status?.status === 'failed' && <span title={status.error} style={{ cursor: 'help' }}><XCircle size={15} color="#f87171" /></span>}
                                   {!status && <span style={{ opacity: 0.2 }}>-</span>}
                                 </td>
                               </tr>
@@ -1402,7 +1482,7 @@ export default function AdminPage() {
 
               {/* Scheduled Mails List */}
               <div className="login-auth-panel" style={{ padding: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.02)' }}>
-                <h2 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '16px' }}>🕒 Scheduled Blasts ({scheduledMails.length})</h2>
+                <h2 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '16px' }}><span className="icon-label"><Activity size={16} /> Scheduled Blasts ({scheduledMails.length})</span></h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
                   {scheduledMails.map(m => (
                     <div key={m.id} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -1411,8 +1491,8 @@ export default function AdminPage() {
                         <button onClick={() => deleteScheduledEmail(m.id)} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                        <span style={{ color: '#60a5fa' }}>📅 {new Date(m.scheduled_at).toLocaleString()}</span>
-                        <span className="muted">👥 {m.recipients?.length || 0} users</span>
+                        <span style={{ color: '#60a5fa' }}>{new Date(m.scheduled_at).toLocaleString()}</span>
+                        <span className="muted">{m.recipients?.length || 0} users</span>
                       </div>
                     </div>
                   ))}
@@ -1433,17 +1513,17 @@ export default function AdminPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>From Name</label>
-                      <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px' }} placeholder="e.g. LRNit Team" value={mailFromName} onChange={e => setMailFromName(e.target.value)} />
+                      <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px', background: 'rgba(255,255,255,0.06)', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.12)' }} placeholder="e.g. LRNit Team" value={mailFromName} onChange={e => setMailFromName(e.target.value)} />
                     </div>
                     <div>
                       <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>Reply-to Email</label>
-                      <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px' }} placeholder="e.g. admin@lrnit.in" value={mailFromEmail} onChange={e => setMailFromEmail(e.target.value)} />
+                      <input className="login-input" style={{ fontSize: '0.85rem', padding: '10px', background: 'rgba(255,255,255,0.06)', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.12)' }} placeholder="e.g. admin@lrnit.in" value={mailFromEmail} onChange={e => setMailFromEmail(e.target.value)} />
                     </div>
                   </div>
 
                   <div>
                     <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '6px' }}>Mail Subject</label>
-                    <input className="login-input" style={{ fontSize: '0.9rem', padding: '12px' }} placeholder="Enter email subject..." value={mailSubject} onChange={e => setMailSubject(e.target.value)} />
+                    <input className="login-input" style={{ fontSize: '0.9rem', padding: '12px', background: 'rgba(255,255,255,0.06)', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.12)' }} placeholder="Enter email subject..." value={mailSubject} onChange={e => setMailSubject(e.target.value)} />
                   </div>
 
                   <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '16px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -1456,8 +1536,8 @@ export default function AdminPage() {
                       </div>
                       <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
                       <div style={{ display: 'flex', gap: '4px' }}>
-                        {['🎉', '🚀', '⭐', '📍'].map(emoji => (
-                          <button key={emoji} onClick={() => insertEmoji(emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}>{emoji}</button>
+                        {['Congrats', 'Update', 'Important', 'Location'].map(token => (
+                          <button key={token} onClick={() => insertEmoji(` ${token} `)} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', fontSize: '0.72rem', color: '#cbd5e1', borderRadius: '999px', padding: '4px 8px' }}>{token}</button>
                         ))}
                       </div>
                       <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
@@ -1495,9 +1575,9 @@ export default function AdminPage() {
 
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(180px, 1fr) auto', gap: '12px', alignItems: 'end' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Event Branding</label>
+                      <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Signature Logo</label>
                       <label className="login-tab active" style={{ display: 'block', textAlign: 'center', cursor: 'pointer', padding: '10px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        🖼️ Change Logo
+                        Upload Signature Logo
                         <input type="file" hidden accept="image/*" onChange={async (e) => {
                           const file = e.target.files?.[0]
                           if (!file) return
@@ -1549,7 +1629,7 @@ export default function AdminPage() {
                       alignItems: 'center'
                     }}>
                       <div style={{ color: '#f87171', fontSize: '0.85rem' }}>
-                        ⚠️ <strong>{Object.values(deliveryStatus).filter(s => s.status === 'failed').length} Emails Failed</strong>
+                        <span className="icon-label"><AlertTriangle size={14} /> <strong>{Object.values(deliveryStatus).filter(s => s.status === 'failed').length} Emails Failed</strong></span>
                         <p style={{ margin: '4px 0 0 0', opacity: 0.7, fontSize: '0.75rem' }}>IDs: {Object.entries(deliveryStatus).filter(([_, s]) => s.status === 'failed').map(([email, _]) => email.split('@')[0]).slice(0, 3).join(', ')}...</p>
                       </div>
                       <button 
@@ -1557,7 +1637,7 @@ export default function AdminPage() {
                         className="login-tab active" 
                         style={{ background: '#f87171', color: '#fff', fontSize: '0.75rem', padding: '6px 12px' }}
                       >
-                        🔄 Resend to Failed
+                        <span className="icon-label"><RotateCcw size={13} /> Resend to Failed</span>
                       </button>
                     </div>
                   )}
@@ -1568,7 +1648,7 @@ export default function AdminPage() {
                     className="login-submit"
                     style={{ minHeight: '50px', background: scheduledAt ? '#10b981' : '#6366f1', color: '#fff', padding: '0 24px', fontSize: isMobile ? '1rem' : '0.9rem', marginTop: '12px' }}
                   >
-                    {sendingCustom ? '⏳ Sending...' : scheduledAt ? `Schedule Campaign` : selectedRecipients.length > 0 ? `🚀 Blast to ${selectedRecipients.length} Selected` : `🚀 Blast to All (${recipients.length})`}
+                    {sendingCustom ? <span className="icon-label" style={{ justifyContent: 'center' }}><LoaderCircle size={15} /> Sending...</span> : scheduledAt ? 'Schedule Campaign' : selectedRecipients.length > 0 ? `Blast to ${selectedRecipients.length} Selected` : `Blast to All (${recipients.length})`}
                   </button>
                 </div>
               </div>

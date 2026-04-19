@@ -4,6 +4,7 @@ import { Html5Qrcode } from 'html5-qrcode'
 export default function QrScanner({ onDecoded }) {
   const containerId = useRef(`qr-${Math.random().toString(36).slice(2)}`)
   const scannerRef = useRef(null)
+  const lastHapticAtRef = useRef(0)
 
   const onDecodedRef = useRef(onDecoded)
   onDecodedRef.current = onDecoded
@@ -18,7 +19,14 @@ export default function QrScanner({ onDecoded }) {
         await scannerRef.current.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 240, height: 240 } },
-          (decodedText) => onDecodedRef.current(decodedText),
+          (decodedText) => {
+            const now = Date.now()
+            if (now - lastHapticAtRef.current > 800 && 'vibrate' in navigator) {
+              navigator.vibrate(35)
+              lastHapticAtRef.current = now
+            }
+            onDecodedRef.current(decodedText)
+          },
           () => undefined,
         )
       } catch {

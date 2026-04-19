@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@400;600;700&display=swap');
+@import 'tailwindcss';
 
 /* Mobile Optimisation */
 @media (max-width: 768px) {
@@ -35,8 +36,6 @@
   .login-submit { padding: 18px !important; font-size: 1rem !important; }
   .login-input { padding: 14px !important; }
 }
-
-@import 'tailwindcss';
 
 :root {
   --bg: #f2efe4;
@@ -202,6 +201,22 @@ h3 {
   border-radius: 999px;
   padding: 8px 12px;
   font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
@@ -1091,6 +1106,14 @@ td {
 .login-feature-icon {
   font-size: 1.5rem;
   flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  color: #60a5fa;
 }
 
 .login-feature-card strong {
@@ -1185,6 +1208,51 @@ td {
 .login-field .optional {
   color: rgba(148, 163, 184, 0.55);
   font-weight: 400;
+}
+
+.login-input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+  font-family: 'Space Grotesk', sans-serif;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.login-input::placeholder {
+  color: rgba(148, 163, 184, 0.65);
+}
+
+.login-input:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+input.login-input:-webkit-autofill,
+input.login-input:-webkit-autofill:hover,
+input.login-input:-webkit-autofill:focus,
+textarea.login-input:-webkit-autofill,
+textarea.login-input:-webkit-autofill:hover,
+textarea.login-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f8fafc;
+  -webkit-box-shadow: 0 0 0px 1000px rgba(15, 23, 42, 0.95) inset;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f8fafc;
+  -webkit-box-shadow: 0 0 0px 1000px rgba(15, 23, 42, 0.95) inset;
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 .login-input-wrap {

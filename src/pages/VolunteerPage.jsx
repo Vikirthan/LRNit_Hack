@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle2, ClipboardList, LoaderCircle, Route, Search, ShieldCheck, UserRound } from 'lucide-react'
 import QrScanner from '../components/QrScanner'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
@@ -31,17 +32,16 @@ export default function VolunteerPage() {
   const handleDecoded = useCallback(async (decodedText) => {
     if (processing) return
     setProcessing(true)
-    setMessage('⌛ Verifying token...')
+    setMessage('Verifying token...')
     try {
       const found = await verifyScanToken(decodedText)
-      if ('vibrate' in navigator) navigator.vibrate(100)
       
       setPendingTeam(found)
       setIsConfirmed(false)
-      setMessage(`✅ Team ${found.team_id} found. Please confirm.`)
+      setMessage(`Team ${found.team_id} found. Please confirm.`)
     } catch (err) {
       console.error('Scan error:', err)
-      setMessage(`❌ Scan Error: ${err.message}`)
+      setMessage(`Scan error: ${err.message}`)
     } finally {
       setProcessing(false)
     }
@@ -49,11 +49,11 @@ export default function VolunteerPage() {
 
   const confirmTeamLoad = () => {
     if (!pendingTeam || !isConfirmed) return
-    if ('vibrate' in navigator) navigator.vibrate([50, 50])
+    if ('vibrate' in navigator) navigator.vibrate(40)
     setTeam(pendingTeam)
     setPendingTeam(null)
     setTeamDetailsVisible(true)
-    setMessage('✅ Team profile loaded successfully.')
+    setMessage('Team profile loaded successfully.')
   }
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export default function VolunteerPage() {
     
     // State machine check
     if (team.active_out) {
-      setMessage(`❌ ERROR: Team ${team.team_id} is already OUT. They must scan IN before going out again.`)
+      setMessage(`Error: Team ${team.team_id} is already out. They must scan in before going out again.`)
       return
     }
 
@@ -89,12 +89,12 @@ export default function VolunteerPage() {
     
     const membersOut = Number(raw)
     if (Number.isNaN(membersOut) || membersOut < 1) {
-      setMessage('❌ Invalid number of members')
+      setMessage('Invalid number of members')
       return
     }
 
     if (membersOut > maxAllowed) {
-      setMessage(`❌ LIMIT EXCEEDED: Only ${maxAllowed} members allowed out for a team of ${team.members_count}.`)
+      setMessage(`Limit exceeded: only ${maxAllowed} members allowed out for a team of ${team.members_count}.`)
       return
     }
 
@@ -105,11 +105,11 @@ export default function VolunteerPage() {
         actorUid: user?.uid,
       })
       // Update local state to reflect the change immediately
-      if ('vibrate' in navigator) navigator.vibrate([50, 30, 50])
+      if ('vibrate' in navigator) navigator.vibrate([30, 20, 30])
       setTeam({ ...team, active_out: { out_at: new Date().toISOString(), members_out: membersOut } })
-      setMessage(result.queued ? 'OUT queued (offline)' : '✅ OUT marked successfully')
+      setMessage(result.queued ? 'Out action queued (offline)' : 'Out marked successfully')
     } catch (err) {
-      setMessage(`❌ Error: ${err.message}`)
+      setMessage(`Error: ${err.message}`)
     }
   }
 
@@ -118,18 +118,18 @@ export default function VolunteerPage() {
 
     // State machine check
     if (!team.active_out) {
-      setMessage(`❌ ERROR: Team ${team.team_id} is already IN. They cannot scan IN without going OUT first.`)
+      setMessage(`Error: Team ${team.team_id} is already in. They cannot scan in without going out first.`)
       return
     }
 
     try {
       const result = await performIn({ teamId: team.team_id, actorUid: user?.uid })
       // Update local state
-      if ('vibrate' in navigator) navigator.vibrate([50, 30, 50])
+      if ('vibrate' in navigator) navigator.vibrate([30, 20, 30])
       setTeam({ ...team, active_out: null })
-      setMessage(result.queued ? 'IN queued (offline)' : `✅ IN marked. Penalty: ${result.penalty || 0} pts`)
+      setMessage(result.queued ? 'In action queued (offline)' : `In marked. Penalty: ${result.penalty || 0} pts`)
     } catch (err) {
-      setMessage(`❌ Error: ${err.message}`)
+      setMessage(`Error: ${err.message}`)
     }
   }
 
@@ -137,12 +137,12 @@ export default function VolunteerPage() {
     if (!team) return
     setProcessing(true)
     try {
-      if ('vibrate' in navigator) navigator.vibrate(200)
+      if ('vibrate' in navigator) navigator.vibrate(60)
       const result = await performAttendance({ teamId: team.team_id, actorUid: user?.uid })
       setTeam({ ...team, is_present: true })
-      setMessage(result.queued ? '✓ Attendance queued (offline)' : '✅ SUCCESS: Team marked as PRESENT')
+      setMessage(result.queued ? 'Attendance queued (offline)' : 'Team marked as present')
     } catch (err) {
-      setMessage(`❌ Status Error: ${err.message}`)
+      setMessage(`Status error: ${err.message}`)
     } finally {
       setProcessing(false)
     }
@@ -161,6 +161,13 @@ export default function VolunteerPage() {
     return teams.filter(t => t.team_name.toLowerCase().includes(q) || t.team_id.toLowerCase().includes(q)).slice(0, 10)
   }, [teams, search])
 
+  const statusTone = useMemo(() => {
+    const text = message.toLowerCase()
+    if (text.includes('error') || text.includes('invalid') || text.includes('failed') || text.includes('limit exceeded')) return 'error'
+    if (text.includes('queued') || text.includes('pending')) return 'warn'
+    return 'info'
+  }, [message])
+
   return (
     <div className="login-page volunteer-page">
       <div className="login-bg-orb login-bg-orb-1" />
@@ -170,7 +177,7 @@ export default function VolunteerPage() {
       <main className="layout volunteer-workspace" style={{ maxWidth: '600px', width: '100%', margin: '0 auto', position: 'relative', zIndex: 1, padding: '20px' }}>
         <header style={{ marginBottom: '32px', textAlign: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
-            <div className="login-feature-icon" style={{ width: '40px', height: '40px', fontSize: '1.2rem', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>⚡</div>
+            <div className="login-feature-icon" style={{ width: '40px', height: '40px', fontSize: '1.2rem', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}><ShieldCheck size={18} /></div>
             <h1 style={{ color: '#fff', fontSize: '1.8rem', margin: 0 }}>Volunteer <span>Portal</span></h1>
           </div>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -187,14 +194,14 @@ export default function VolunteerPage() {
             onClick={() => { setMode('attendance'); setTeamDetailsVisible(false); }}
             style={{ padding: '12px', borderRadius: '14px', fontSize: '0.9rem', transition: '0.3s' }}
           >
-            📋 Attendance
+            <span className="icon-label"><ClipboardList size={16} /> Attendance</span>
           </button>
           <button 
             className={`login-tab ${mode === 'movement' ? 'active' : ''}`}
             onClick={() => { setMode('movement'); setTeamDetailsVisible(false); }}
             style={{ padding: '12px', borderRadius: '14px', fontSize: '0.9rem', transition: '0.3s' }}
           >
-            🚶 Movement
+            <span className="icon-label"><Route size={16} /> Movement</span>
           </button>
         </div>
 
@@ -202,13 +209,13 @@ export default function VolunteerPage() {
           <div style={{ marginBottom: '24px', textAlign: 'center' }}>
             <div style={{ background: 'rgba(0,0,0,0.4)', padding: '24px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
               <QrScanner onDecoded={handleDecoded} />
-              {processing && <p style={{ color: '#818cf8', marginTop: '12px', fontWeight: 600 }}>⚙️ Processing Scan...</p>}
+              {processing && <p style={{ color: '#818cf8', marginTop: '12px', fontWeight: 600 }}><span className="icon-label" style={{ justifyContent: 'center' }}><LoaderCircle size={16} /> Processing scan...</span></p>}
             </div>
           </div>
 
           <div className="status-bar" style={{ 
-            background: message.includes('❌') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)',
-            color: message.includes('❌') ? '#f87171' : '#818cf8',
+            background: statusTone === 'error' ? 'rgba(239, 68, 68, 0.1)' : statusTone === 'warn' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(99, 102, 241, 0.1)',
+            color: statusTone === 'error' ? '#f87171' : statusTone === 'warn' ? '#fbbf24' : '#818cf8',
             padding: '16px',
             borderRadius: '16px',
             fontSize: '0.9rem',
@@ -237,7 +244,7 @@ export default function VolunteerPage() {
                     fontWeight: 800,
                     border: `1px solid ${team.is_present ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
                   }}>
-                    {team.is_present ? '✅ PRESENT' : '⏳ ARRIVAL PENDING'}
+                    {team.is_present ? 'PRESENT' : 'ARRIVAL PENDING'}
                   </div>
                 </div>
 
@@ -266,7 +273,7 @@ export default function VolunteerPage() {
                           boxShadow: (team.active_out || !team.is_present) ? 'none' : '0 8px 16px rgba(244, 63, 94, 0.2)'
                         }}
                       >
-                         🚩 Scan OUT
+                        <span className="icon-label" style={{ justifyContent: 'center' }}><ArrowUpRight size={16} /> Mark Out</span>
                       </button>
                       <button 
                         className="login-submit" 
@@ -277,13 +284,13 @@ export default function VolunteerPage() {
                           boxShadow: !team.active_out ? 'none' : '0 8px 16px rgba(59, 130, 246, 0.2)'
                         }}
                       >
-                         🔙 Scan IN
+                        <span className="icon-label" style={{ justifyContent: 'center' }}><ArrowDownLeft size={16} /> Mark In</span>
                       </button>
                     </div>
                   )}
                   {!team.is_present && mode === 'movement' && (
                     <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '12px', textAlign: 'center', fontWeight: 600 }}>
-                      ⚠️ Team must mark attendance before managing movements.
+                      <span className="icon-label" style={{ justifyContent: 'center' }}><AlertTriangle size={14} /> Team must mark attendance before managing movements.</span>
                     </p>
                   )}
                 </div>
@@ -303,7 +310,9 @@ export default function VolunteerPage() {
                   className="login-input"
                   style={{ border: 'none' }}
                 />
-                <button type="submit" disabled={searching} className="login-tab active" style={{ padding: '0 20px', borderRadius: '0 14px 14px 0' }}>{searching ? '...' : '🔍'}</button>
+                <button type="submit" disabled={searching} className="login-tab active" style={{ padding: '0 20px', borderRadius: '0 14px 14px 0' }}>
+                  {searching ? '...' : <Search size={16} />}
+                </button>
               </div>
             </form>
 
@@ -351,7 +360,7 @@ export default function VolunteerPage() {
           <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.8)', padding: '20px' }}>
             <div className="login-auth-panel" style={{ width: 'min(500px, 100%)', padding: '32px', background: 'rgba(20, 24, 40, 0.95)', border: '1px solid rgba(129, 140, 248, 0.5)', boxShadow: '0 0 60px rgba(0,0,0,0.5)' }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                <div style={{ margin: '0 auto 16px', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(129, 140, 248, 0.2)', color: '#818cf8', display: 'grid', placeItems: 'center', fontSize: '1.8rem' }}>👤</div>
+                <div style={{ margin: '0 auto 16px', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(129, 140, 248, 0.2)', color: '#818cf8', display: 'grid', placeItems: 'center', fontSize: '1.8rem' }}><UserRound size={28} /></div>
                 <h2 style={{ color: '#fff', fontSize: '1.8rem', fontWeight: 700, margin: 0 }}>Confirm Team</h2>
                 <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '8px' }}>Verify the team's identity before proceeding.</p>
               </div>
@@ -377,7 +386,7 @@ export default function VolunteerPage() {
                   className="login-submit" 
                   style={{ opacity: isConfirmed ? 1 : 0.5, background: isConfirmed ? 'linear-gradient(135deg, #818cf8, #6366f1)' : 'rgba(59,130,246,0.1)' }}
                 >
-                  Confirm & Load
+                  <span className="icon-label" style={{ justifyContent: 'center' }}><CheckCircle2 size={16} /> Confirm and Load</span>
                 </button>
               </div>
             </div>

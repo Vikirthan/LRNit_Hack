@@ -3,6 +3,7 @@ import { generateTeamQrToken, sendOverdueAlert, sendTeamQrEmail } from './supaba
 export { generateTeamQrToken }
 
 const LOCAL_TEAMS_KEY = 'ticketscan-local-teams'
+const LOCAL_TEAM_VERIFICATION_KEY = 'ticketscan-team-verification-locks'
 
 const defaultRules = {
   max_break_time: 30,
@@ -28,6 +29,23 @@ function writeLocalTeams(teams) {
     window.localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(teams))
   } catch {
     // Ignore local storage failures in demo mode.
+  }
+}
+
+function readTeamVerificationLocks() {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_TEAM_VERIFICATION_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeTeamVerificationLocks(locks) {
+  try {
+    window.localStorage.setItem(LOCAL_TEAM_VERIFICATION_KEY, JSON.stringify(locks))
+  } catch {
+    // Ignore storage failures
   }
 }
 
@@ -416,11 +434,14 @@ export async function getTeams() {
       .order('team_name', { ascending: true })
     if (error) throw error
     if (data) {
+      const verificationLocks = readTeamVerificationLocks()
       // Map to flatten emails for easier UI use if needed
       const mapped = data.map(t => ({
         ...t,
         email_count: t.team_emails?.length || 0,
-        leader_email: t.team_emails?.[0]?.email || null
+        leader_email: t.team_emails?.[0]?.email || null,
+        github_verified: t.github_verified ?? verificationLocks[t.team_id]?.github_verified ?? false,
+        documentation_verified: t.documentation_verified ?? verificationLocks[t.team_id]?.documentation_verified ?? false,
       }))
       writeLocalTeams(mapped)
       return mapped
@@ -430,6 +451,48 @@ export async function getTeams() {
   }
 
   return readLocalTeams()
+}
+
+export async function setTeamVerificationLocks(teamId, { githubVerified, documentationVerified }) {
+  if (!teamId) throw new Error('Team ID is required')
+
+  const locks = readTeamVerificationLocks()
+  locks[teamId] = {
+    github_verified: Boolean(githubVerified),
+    documentation_verified: Boolean(documentationVerified),
+  }
+  writeTeamVerificationLocks(locks)
+
+  const teams = readLocalTeams()
+  const idx = teams.findIndex(t => t.team_id === teamId)
+  if (idx >= 0) {
+    teams[idx] = {
+      ...teams[idx],
+      github_verified: Boolean(githubVerified),
+      documentation_verified: Boolean(documentationVerified),
+      updated_at: new Date().toISOString(),
+    }
+    writeLocalTeams(teams)
+  }
+
+  if (!supabase) return { persisted: false }
+
+  // Try persisting to backend if columns exist; keep local fallback if schema doesn't support yet.
+  const { error } = await supabase
+    .from('teams')
+    .update({
+      github_verified: Boolean(githubVerified),
+      documentation_verified: Boolean(documentationVerified),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('team_id', teamId)
+
+  if (error) {
+    console.warn('setTeamVerificationLocks: backend schema may be missing verification columns, using local fallback', error)
+    return { persisted: false }
+  }
+
+  return { persisted: true }
 }
 
 export async function verifyTeamsInBackend(teamIds = []) {
