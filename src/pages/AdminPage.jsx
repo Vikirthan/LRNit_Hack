@@ -32,6 +32,12 @@ import Toast from '../components/Toast'
 export default function AdminPage() {
   const { profile, logout } = useAuth()
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
+  const [isTablet, setIsTablet] = useState(() => window.innerWidth > 768 && window.innerWidth <= 1180)
+  const [isLandscapeMobile, setIsLandscapeMobile] = useState(() => {
+    const width = window.innerWidth
+    const height = window.innerHeight
+    return width <= 960 && width > height
+  })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [teams, setTeams] = useState([])
   const [teacherScores, setTeacherScores] = useState([])
@@ -125,7 +131,13 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    const onResize = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      setIsMobile(width <= 768)
+      setIsTablet(width > 768 && width <= 1180)
+      setIsLandscapeMobile(width <= 960 && width > height)
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -706,19 +718,28 @@ export default function AdminPage() {
           border: '1px solid rgba(255,255,255,0.08)', 
           marginBottom: isMobile ? '24px' : '40px', 
           display: 'flex', 
-          flexWrap: isMobile ? 'wrap' : 'nowrap',
+          flexWrap: (isMobile && !isLandscapeMobile) ? 'wrap' : 'nowrap',
           gap: '8px',
-          overflowX: isMobile ? 'hidden' : 'auto',
-          position: isMobile ? 'sticky' : 'static',
-          top: isMobile ? '8px' : 'auto',
-          zIndex: isMobile ? 50 : 'auto',
-          backdropFilter: isMobile ? 'blur(8px)' : 'none'
+          overflowX: (isTablet || isLandscapeMobile) ? 'auto' : (isMobile ? 'hidden' : 'visible'),
+          overflowY: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          position: (isMobile && !isLandscapeMobile) ? 'sticky' : 'static',
+          top: (isMobile && !isLandscapeMobile) ? '8px' : 'auto',
+          zIndex: (isMobile && !isLandscapeMobile) ? 50 : 'auto',
+          backdropFilter: (isMobile && !isLandscapeMobile) ? 'blur(8px)' : 'none'
         }}>
           {['dashboard', 'teams', 'judge', 'settings', 'accounts', 'mailing'].map(tab => (
             <button 
               key={tab}
               className={activeTab === tab ? 'login-tab active' : 'login-tab'} 
-              style={{ flex: isMobile ? '1 1 calc(33.33% - 8px)' : 1, minWidth: isMobile ? 'unset' : 'auto', textTransform: 'capitalize', padding: isMobile ? '10px 12px' : '12px 20px', fontSize: isMobile ? '0.85rem' : '0.95rem', whiteSpace: 'nowrap' }}
+              style={{
+                flex: (isTablet || isLandscapeMobile) ? '0 0 auto' : (isMobile ? '1 1 calc(33.33% - 8px)' : 1),
+                minWidth: (isTablet || isLandscapeMobile) ? (isLandscapeMobile ? '136px' : '148px') : (isMobile ? 'unset' : 'auto'),
+                textTransform: 'capitalize',
+                padding: isMobile ? '10px 12px' : (isTablet ? '11px 14px' : '12px 20px'),
+                fontSize: isMobile ? '0.85rem' : (isTablet ? '0.88rem' : '0.95rem'),
+                whiteSpace: 'nowrap'
+              }}
               onClick={() => setActiveTab(tab)}
             >
               {tab === 'mailing' ? <span className="icon-label"><Mail size={15} /> Mailing</span> : tab}

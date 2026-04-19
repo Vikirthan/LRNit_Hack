@@ -37,6 +37,64 @@
   .login-input { padding: 14px !important; }
 }
 
+@media (max-width: 1024px) {
+  .layout.admin-layout,
+  .layout.volunteer-workspace {
+    max-width: 100% !important;
+    padding: 14px !important;
+  }
+
+  .grid.two-col,
+  .teacher-workspace,
+  .mailing-center {
+    grid-template-columns: 1fr !important;
+  }
+
+  .login-auth-panel {
+    padding: 24px !important;
+    border-radius: 22px !important;
+  }
+
+  .topbar {
+    gap: 12px !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  .tab-nav {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-inline: 8px;
+    scrollbar-width: thin;
+  }
+
+  .tab-nav .login-tab {
+    flex: 0 0 auto !important;
+    min-width: 148px !important;
+    font-size: 0.88rem !important;
+    padding: 11px 14px !important;
+  }
+}
+
+@media (max-width: 960px) and (orientation: landscape) {
+  .tab-nav {
+    position: static !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 6px !important;
+    gap: 8px !important;
+    scrollbar-width: thin;
+  }
+
+  .tab-nav .login-tab {
+    flex: 0 0 auto !important;
+    min-width: 136px !important;
+    padding: 9px 12px !important;
+    font-size: 0.82rem !important;
+  }
+}
+
 :root {
   --bg: #f2efe4;
   --surface: #fff7e0;

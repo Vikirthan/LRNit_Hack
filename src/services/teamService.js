@@ -544,20 +544,28 @@ export async function getLatestLogs() {
 export async function saveTeacherScore(teamId, scores, remarks, teacherName, teacherId) {
   if (!supabase) throw new Error('Supabase is not configured yet')
 
+  const locks = readTeamVerificationLocks()
+  const teamLock = locks[teamId] || {}
+  const effectiveScores = {
+    ...scores,
+    github: teamLock.github_verified ? 10 : (scores.github || 0),
+    documentation: teamLock.documentation_verified ? 10 : (scores.documentation || 0),
+  }
+
   const payload = {
     team_id: teamId,
     // teacher_id references auth.users(id), but local accounts live in
     // user_accounts, so we must set this to null to avoid FK violations.
     teacher_id: null,
     teacher_name: teacherName,
-    problem_understanding: scores.problem_understanding || 0,
-    novelty: scores.novelty || 0,
-    technical_depth: scores.technical_depth || 0,
-    social_relevance: scores.social_relevance || 0,
-    presentation: scores.presentation || 0,
-    github: scores.github || 0,
-    documentation: scores.documentation || 0,
-    total: Object.values(scores).reduce((sum, val) => sum + (Number(val) || 0), 0),
+    problem_understanding: effectiveScores.problem_understanding || 0,
+    novelty: effectiveScores.novelty || 0,
+    technical_depth: effectiveScores.technical_depth || 0,
+    social_relevance: effectiveScores.social_relevance || 0,
+    presentation: effectiveScores.presentation || 0,
+    github: effectiveScores.github || 0,
+    documentation: effectiveScores.documentation || 0,
+    total: Object.values(effectiveScores).reduce((sum, val) => sum + (Number(val) || 0), 0),
     remarks: remarks || '',
     updated_at: new Date().toISOString(),
   }
