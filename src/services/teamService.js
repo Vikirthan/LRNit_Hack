@@ -370,6 +370,11 @@ function buildAbsentAlertHtml(team, ticketUrl) {
       <p style="margin:0 0 18px;">
         <a href="${safeTicketUrl}" style="display:inline-block;background:#d97706;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">View Team QR Ticket</a>
       </p>
+      <div style="margin:0 0 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;color:#7c2d12;font-size:13px;line-height:1.7;">
+        <strong>Any queries Contact:</strong><br />
+        1. Kishorekumar - 7708 086 102<br />
+        2. Saravanakumar - 96882 04043
+      </div>
       <p style="margin:0;color:#92400e;font-size:13px;">If you are already in the arena, contact the help desk for a status refresh.</p>
     </div>
   `
@@ -401,6 +406,10 @@ async function sendAbsentAlertFallback(teamId, baseUrl) {
     '',
     'You are currently marked absent from the arena.',
     `Please report to room ${team.room_number || 'TBA'} immediately with your team QR ticket.`,
+    'Any queries Contact:',
+    '1. Kishorekumar - 7708 086 102',
+    '2. Saravanakumar - 96882 04043',
+    '',
     ticketUrl,
   ].join('\n')
 

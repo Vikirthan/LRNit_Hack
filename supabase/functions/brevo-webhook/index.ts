@@ -13,6 +13,26 @@ const corsHeaders = {
 
 type JsonObject = Record<string, unknown>;
 
+function extractTag(rawTag: unknown): string | null {
+  if (Array.isArray(rawTag)) {
+    const list = rawTag.map((item) => String(item)).filter((item) => item.length > 0);
+    return list.length > 0 ? list.join(",") : null;
+  }
+  if (typeof rawTag === "string" && rawTag.trim().length > 0) {
+    return rawTag.trim();
+  }
+  return null;
+}
+
+function extractBatchId(tag: string | null): string | null {
+  if (!tag) return null;
+  const parts = tag.split(",").map((item) => item.trim());
+  const batchTag = parts.find((item) => item.startsWith("batch:"));
+  if (!batchTag) return null;
+  const value = batchTag.slice("batch:".length).trim();
+  return value.length > 0 ? value : null;
+}
+
 function parseEventTime(input: unknown): string {
   if (typeof input === "number" && Number.isFinite(input)) {
     const milliseconds = input < 1e12 ? input * 1000 : input;
@@ -53,7 +73,8 @@ async function normalizeEvent(raw: JsonObject) {
     : raw.uuid
     ? String(raw.uuid)
     : null;
-  const tag = raw.tag ? String(raw.tag) : null;
+  const tag = extractTag(raw.tag);
+  const batchId = extractBatchId(tag);
   const eventTime = parseEventTime(raw.ts_event ?? raw.ts ?? raw.date ?? raw.created_at);
 
   const eventKeySeed = JSON.stringify({
@@ -75,6 +96,7 @@ async function normalizeEvent(raw: JsonObject) {
     recipient_email: recipientEmail,
     subject,
     tag,
+    batch_id: batchId,
     event_time: eventTime,
     payload: raw,
   };

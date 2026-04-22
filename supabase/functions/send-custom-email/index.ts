@@ -59,7 +59,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email, name, subject, content, signature, fromEmail, fromName, scheduledAt, eventLogoUrl, htmlContent, attachments } = await req.json();
+    const { email, name, subject, content, signature, fromEmail, fromName, scheduledAt, eventLogoUrl, htmlContent, attachments, batchId } = await req.json();
 
     if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY is not set in Supabase secrets");
     if (!email) throw new Error("Recipient email is required");
@@ -166,6 +166,10 @@ serve(async (req) => {
 
     if (scheduledAt) {
       payload.scheduledAt = scheduledAt;
+    }
+
+    if (batchId && typeof batchId === "string") {
+      payload.tags = [`batch:${batchId}`];
     }
 
     const fileAttachments = Array.isArray(attachments)

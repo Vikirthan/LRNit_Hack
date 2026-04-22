@@ -94,6 +94,10 @@ export default function AdminPage() {
   const [previewIndex, setPreviewIndex] = useState(0)
   const [deliveryStatus, setDeliveryStatus] = useState({}) // { email: { status, error, name } }
   const [showFailedOnly, setShowFailedOnly] = useState(false)
+  const [mailingHistory, setMailingHistory] = useState([])
+  const [mailingHistoryRecipients, setMailingHistoryRecipients] = useState([])
+  const [mailingEventRows, setMailingEventRows] = useState([])
+  const [selectedMailBatchId, setSelectedMailBatchId] = useState(null)
   
   // Manual Recipient Entry
   const [manualRecipientName, setManualRecipientName] = useState('')
@@ -212,16 +216,120 @@ export default function AdminPage() {
     setStatus(`Updated scheduled blast \"${blast.subject}\" to sent.`)
   }
 
+  const createMailingBatch = async ({
+    targetList,
+    subject,
+    content,
+    signature,
+    fromName,
+    fromEmail,
+    sendMode,
+    scheduledAt,
+    status,
+    successCount = 0,
+    failedCount = 0,
+  }) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const creatorId = user?.id || null
+
+    const { data: batch, error: batchError } = await supabase
+      .from('mailing_batches')
+      .insert({
+        created_by: creatorId,
+        subject,
+        content,
+        signature,
+        from_name: fromName,
+        from_email: fromEmail,
+        scheduled_at: scheduledAt || null,
+        send_mode: sendMode,
+        status,
+        recipient_count: targetList.length,
+        success_count: successCount,
+        failed_count: failedCount,
+      })
+      .select('id')
+      .single()
+
+    if (batchError) throw batchError
+
+    const recipientRows = targetList
+      .filter((item) => item?.email)
+      .map((item) => ({
+        batch_id: batch.id,
+        recipient_name: item.name || null,
+        recipient_email: item.email,
+      }))
+
+    if (recipientRows.length > 0) {
+      const { error: recipientError } = await supabase
+        .from('mailing_batch_recipients')
+        .insert(recipientRows)
+      if (recipientError) throw recipientError
+    }
+
+    return batch.id
+  }
+
+  const getBatchEventSummary = (batchId) => {
+    const rows = mailingEventRows.filter((row) => row.batch_id === batchId)
+    const recipients = new Set(rows.map((row) => row.recipient_email).filter(Boolean))
+
+    const delivered = new Set()
+    const opened = new Set()
+    const clicked = new Set()
+    const failed = new Set()
+
+    for (const row of rows) {
+      const email = row.recipient_email
+      if (!email) continue
+      const type = (row.event_type || '').toLowerCase()
+      if (type === 'delivered') delivered.add(email)
+      if (type === 'opened' || type === 'unique_opened' || type === 'first_opening') opened.add(email)
+      if (type === 'clicked') clicked.add(email)
+      if (['soft_bounced', 'hard_bounced', 'blocked', 'invalid', 'complaint', 'spam', 'error'].includes(type)) {
+        failed.add(email)
+      }
+    }
+
+    return {
+      totalTrackedRecipients: recipients.size,
+      delivered: delivered.size,
+      opened: opened.size,
+      clicked: clicked.size,
+      failed: failed.size,
+    }
+  }
+
+  const getRecipientLatestStatus = (batchId, recipientEmail) => {
+    const row = mailingEventRows
+      .filter((item) => item.batch_id === batchId && item.recipient_email === recipientEmail)
+      .sort((a, b) => new Date(b.event_time).getTime() - new Date(a.event_time).getTime())[0]
+
+    if (!row) return 'queued'
+    const type = (row.event_type || '').toLowerCase()
+    if (['hard_bounced', 'soft_bounced', 'blocked', 'invalid', 'complaint', 'spam', 'error'].includes(type)) return 'failed'
+    if (type === 'clicked') return 'clicked'
+    if (type === 'opened' || type === 'unique_opened' || type === 'first_opening') return 'opened'
+    if (type === 'delivered') return 'delivered'
+    if (type === 'deferred') return 'deferred'
+    if (type === 'sent') return 'sent'
+    return type || 'queued'
+  }
+
   const refresh = async () => {
     try {
-      const [t, s, p, r, a, l, sch] = await Promise.allSettled([
+      const [t, s, p, r, a, l, sch, mb, mbr, mee] = await Promise.allSettled([
         getTeams(),
         getTeacherScores(),
         getProtocols(),
         getRules(),
         getAllAccounts(),
         getActivityLog(),
-        supabase.from('scheduled_emails').select('*').order('scheduled_at', { ascending: true })
+        supabase.from('scheduled_emails').select('*').order('scheduled_at', { ascending: true }),
+        supabase.from('mailing_batches').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('mailing_batch_recipients').select('*').order('created_at', { ascending: false }).limit(5000),
+        supabase.from('email_events').select('*').order('event_time', { ascending: false }).limit(10000),
       ])
 
       if (t.status === 'fulfilled') setTeams(t.value)
@@ -235,6 +343,9 @@ export default function AdminPage() {
       }
       if (a.status === 'fulfilled') setAccounts(a.value)
       if (l.status === 'fulfilled') setLogs(l.value)
+      if (mb.status === 'fulfilled' && mb.value?.data) setMailingHistory(mb.value.data)
+      if (mbr.status === 'fulfilled' && mbr.value?.data) setMailingHistoryRecipients(mbr.value.data)
+      if (mee.status === 'fulfilled' && mee.value?.data) setMailingEventRows(mee.value.data)
       if (sch.status === 'fulfilled' && sch.value?.data) {
         setScheduledMails(sch.value.data)
 
@@ -301,6 +412,17 @@ export default function AdminPage() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (mailingHistory.length === 0) {
+      if (selectedMailBatchId) setSelectedMailBatchId(null)
+      return
+    }
+    const exists = mailingHistory.some((item) => item.id === selectedMailBatchId)
+    if (!exists) {
+      setSelectedMailBatchId(mailingHistory[0].id)
+    }
+  }, [mailingHistory, selectedMailBatchId])
 
   // Auto-save Draft
   useEffect(() => {
@@ -756,8 +878,19 @@ export default function AdminPage() {
       
       setSendingCustom(true)
       try {
-        const { data: { user } } = await supabase.auth.getUser()
         const utcIsoString = new Date(scheduledAt).toISOString()
+        const { data: { user } } = await supabase.auth.getUser()
+        const batchId = await createMailingBatch({
+          targetList,
+          subject: mailSubject,
+          content: mailContent,
+          signature: mailSignature,
+          fromName: mailFromName,
+          fromEmail: mailFromEmail,
+          sendMode: 'scheduled',
+          scheduledAt: utcIsoString,
+          status: 'scheduled',
+        })
 
         let success = 0
         let fail = 0
@@ -775,6 +908,7 @@ export default function AdminPage() {
               fromName: mailFromName,
               eventLogoUrl: rules.event_logo_url,
               scheduledAt: utcIsoString,
+              batchId,
               htmlContent: buildEmailHtml({
                 recipient: r,
                 subject: getDynamicContent(mailSubject, r),
@@ -806,6 +940,15 @@ export default function AdminPage() {
         })
         if (error) throw error
 
+        await supabase
+          .from('mailing_batches')
+          .update({
+            success_count: success,
+            failed_count: fail,
+            status: success > 0 ? 'scheduled' : 'failed',
+          })
+          .eq('id', batchId)
+
         alert(`Scheduled blast queued successfully!\nQueued: ${success}\nFailed: ${fail}`)
         setScheduledAt('')
         refresh()
@@ -826,6 +969,18 @@ export default function AdminPage() {
     setStatus(`📨 Starting custom batch mailing...`)
 
     try {
+      const batchId = await createMailingBatch({
+        targetList,
+        subject: mailSubject,
+        content: mailContent,
+        signature: mailSignature,
+        fromName: mailFromName,
+        fromEmail: mailFromEmail,
+        sendMode: 'send_now',
+        scheduledAt: null,
+        status: 'processing',
+      })
+
       for (let i = 0; i < targetList.length; i++) {
           const r = targetList[i]
           try {
@@ -840,6 +995,7 @@ export default function AdminPage() {
                   fromName: mailFromName,
                   attachments: mailAttachments,
                   eventLogoUrl: rules.event_logo_url,
+                  batchId,
                   htmlContent: buildEmailHtml({
                     recipient: r,
                     subject: getDynamicContent(mailSubject, r),
@@ -863,6 +1019,15 @@ export default function AdminPage() {
           }
           setDeliveryStatus({ ...newStatus }) // Update live
       }
+
+      await supabase
+        .from('mailing_batches')
+        .update({
+          success_count: success,
+          failed_count: fail,
+          status: success > 0 ? (fail > 0 ? 'partial' : 'sent') : 'failed',
+        })
+        .eq('id', batchId)
 
       setStatus(`✅ Mailing complete. Success: ${success}, Failed: ${fail}.`)
       alert(`Mailing Complete!\n✓ Success: ${success}\n✖ Failed: ${fail}`)
@@ -1120,6 +1285,15 @@ export default function AdminPage() {
     t.team_name.toLowerCase().includes(teamFilter.toLowerCase()) || 
     t.team_id.toLowerCase().includes(teamFilter.toLowerCase())
   )
+  const selectedMailBatch = mailingHistory.find((item) => item.id === selectedMailBatchId) || null
+  const selectedMailBatchRecipients = selectedMailBatch
+    ? mailingHistoryRecipients.filter((item) => item.batch_id === selectedMailBatch.id)
+    : []
+  const selectedMailBatchEvents = selectedMailBatch
+    ? mailingEventRows
+        .filter((item) => item.batch_id === selectedMailBatch.id)
+        .sort((a, b) => new Date(b.event_time).getTime() - new Date(a.event_time).getTime())
+    : []
 
   return (
     <div className="login-page">
@@ -2079,6 +2253,98 @@ export default function AdminPage() {
                   ))}
                   {scheduledMails.length === 0 && <p className="muted" style={{ textAlign: 'center', fontSize: '0.85rem', padding: '20px' }}>No active schedules</p>}
                 </div>
+              </div>
+
+              <div className="login-auth-panel" style={{ padding: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.02)' }}>
+                <h2 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '16px' }}><span className="icon-label"><Activity size={16} /> Mail History ({mailingHistory.length})</span></h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '260px', overflowY: 'auto', marginBottom: '16px' }}>
+                  {mailingHistory.map((item) => {
+                    const summary = getBatchEventSummary(item.id)
+                    const effectiveStatus = summary.failed > 0 && summary.delivered === 0
+                      ? 'failed'
+                      : summary.delivered > 0 || summary.opened > 0 || summary.clicked > 0
+                      ? 'sent'
+                      : item.status
+                    const isSelected = selectedMailBatchId === item.id
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedMailBatchId(item.id)}
+                        style={{
+                          textAlign: 'left',
+                          background: isSelected ? 'rgba(96,165,250,0.15)' : 'rgba(0,0,0,0.2)',
+                          border: isSelected ? '1px solid rgba(96,165,250,0.5)' : '1px solid rgba(255,255,255,0.05)',
+                          borderRadius: '12px',
+                          padding: '10px',
+                          color: '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>
+                          <strong style={{ fontSize: '0.8rem', lineHeight: 1.4 }}>{item.subject}</strong>
+                          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: effectiveStatus === 'failed' ? '#f87171' : effectiveStatus === 'sent' ? '#34d399' : '#fbbf24' }}>{effectiveStatus}</span>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>{new Date(item.created_at).toLocaleString()}</div>
+                        <div style={{ display: 'flex', gap: '8px', fontSize: '0.68rem', color: 'rgba(255,255,255,0.75)', flexWrap: 'wrap' }}>
+                          <span>{item.recipient_count || 0} recipients</span>
+                          <span>Delivered {summary.delivered}</span>
+                          <span>Opened {summary.opened}</span>
+                          <span>Clicked {summary.clicked}</span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                  {mailingHistory.length === 0 && <p className="muted" style={{ textAlign: 'center', fontSize: '0.8rem', padding: '14px' }}>No mail history yet</p>}
+                </div>
+
+                {selectedMailBatch ? (
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px' }}>
+                    <h3 style={{ color: '#fff', fontSize: '0.92rem', marginBottom: '10px' }}>Insights: {selectedMailBatch.subject}</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                      {(() => {
+                        const summary = getBatchEventSummary(selectedMailBatch.id)
+                        return (
+                          <>
+                            <div style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>Recipients: <strong style={{ color: '#fff' }}>{selectedMailBatch.recipient_count || 0}</strong></div>
+                            <div style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>Delivered: <strong style={{ color: '#34d399' }}>{summary.delivered}</strong></div>
+                            <div style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>Opened: <strong style={{ color: '#60a5fa' }}>{summary.opened}</strong></div>
+                            <div style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>Clicked: <strong style={{ color: '#a78bfa' }}>{summary.clicked}</strong></div>
+                          </>
+                        )
+                      })()}
+                    </div>
+
+                    <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {selectedMailBatchRecipients.map((recipient) => {
+                        const latestStatus = getRecipientLatestStatus(selectedMailBatch.id, recipient.recipient_email)
+                        const recipientEvents = selectedMailBatchEvents.filter((event) => event.recipient_email === recipient.recipient_email)
+                        return (
+                          <div key={`${selectedMailBatch.id}-${recipient.recipient_email}`} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '8px 10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                              <div>
+                                <div style={{ color: '#fff', fontSize: '0.76rem', fontWeight: 600 }}>{recipient.recipient_name || 'No Name'}</div>
+                                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.68rem' }}>{recipient.recipient_email}</div>
+                              </div>
+                              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: latestStatus === 'failed' ? '#f87171' : latestStatus === 'clicked' ? '#a78bfa' : latestStatus === 'opened' ? '#60a5fa' : latestStatus === 'delivered' ? '#34d399' : '#fbbf24', fontWeight: 700 }}>{latestStatus}</span>
+                            </div>
+                            <div style={{ marginTop: '6px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>
+                              {recipientEvents.slice(0, 3).map((event, idx) => (
+                                <span key={`${recipient.recipient_email}-${event.id || idx}`} style={{ marginRight: '8px' }}>
+                                  {event.event_type} • {new Date(event.event_time).toLocaleTimeString()}
+                                </span>
+                              ))}
+                              {recipientEvents.length === 0 && <span>No webhook events yet</span>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {selectedMailBatchRecipients.length === 0 && <p className="muted" style={{ fontSize: '0.78rem', textAlign: 'center', padding: '8px' }}>No recipients recorded for this mail.</p>}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="muted" style={{ fontSize: '0.78rem', textAlign: 'center' }}>Select a history item to view insights</p>
+                )}
               </div>
             </div>
 

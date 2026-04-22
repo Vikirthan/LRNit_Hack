@@ -85,6 +85,12 @@ serve(async (req) => {
             <p style="font-size: 0.85rem; color: #b45309; text-align: center; margin-top: 24px;">
               If you are already in the arena, please report to the help session desk to verify your attendance status.
             </p>
+
+            <div style="margin-top: 18px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px 14px; color: #7c2d12; font-size: 14px; line-height: 1.7;">
+              <strong>Any queries Contact:</strong><br />
+              1. Kishorekumar - 7708 086 102<br />
+              2. Saravanakumar - 96882 04043
+            </div>
           </div>
         `,
       }),

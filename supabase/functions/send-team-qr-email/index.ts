@@ -87,6 +87,12 @@ serve(async (req) => {
             <p style="font-size: 15px; color: #475569; margin-top: 25px;">
               ⚠️ <strong>Important:</strong> Please keep this QR safe. We recommend you <strong>"Star" this email</strong> right now so you can find it instantly at the venue.
             </p>
+
+            <div style="margin-top: 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; color: #334155; font-size: 14px; line-height: 1.7;">
+              <strong>Any queries Contact:</strong><br />
+              1. Kishorekumar - 7708 086 102<br />
+              2. Saravanakumar - 96882 04043
+            </div>
             
             <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f1f5f9; text-align: center;">
               <p style="font-size: 0.85rem; color: #94a3b8; margin: 0;">Organized with ❤️ for Aethera X</p>
