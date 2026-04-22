@@ -473,7 +473,7 @@ export default function AdminPage() {
 <body>
   <div style="max-width:550px;margin:40px auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
     <div style="background-color:#1e293b;padding:40px 24px;text-align:center;">
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div style="text-align:center;">
         ${hasLogo ? `
         <div style="margin-bottom:20px;text-align:center;">
           <img src="${safeLogoUrl}" alt="Event Logo" style="height:120px;max-width:280px;object-fit:contain;display:inline-block;" />
