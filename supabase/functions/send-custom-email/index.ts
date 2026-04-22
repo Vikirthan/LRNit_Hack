@@ -101,19 +101,19 @@ serve(async (req) => {
             
             <!-- Version: 2.0.2 (Greetings Test) -->
             <!-- Dark Modern Header (LRNit Branding) -->
-            <div style="background-color: #1e293b; padding: 32px 24px; text-align: center;">
+            <div style="background-color: #1e293b; padding: 40px 24px; text-align: center;">
               <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <!-- Optional Event Logo - LARGE AND PROMINENT -->
+                 ${eventLogoUrl ? `
+                 <div style="margin-bottom: 20px; text-align: center;">
+                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 120px; max-width: 280px; object-fit: contain; display: inline-block;" />
+                 </div>
+                 ` : ''}
+
                 <h2 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">
                   LRN<span style="color: #60a5fa;">it</span>
                 </h2>
-                <div style="margin-top: 8px; color: rgba(255,255,255,0.4); font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 800;">Learn · Build · Lead</div>
-
-                <!-- Optional Event Logo -->
-                 ${eventLogoUrl ? `
-                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); width: 100%; text-align: center;">
-                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 40px; max-width: 180px; object-fit: contain; display: inline-block;" />
-                 </div>
-                 ` : ''}
+                <div style="margin-top: 12px; color: rgba(255,255,255,0.5); font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700;">Learn · Build · Lead</div>
               </div>
             </div>
 
