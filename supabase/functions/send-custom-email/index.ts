@@ -102,19 +102,17 @@ serve(async (req) => {
             <!-- Version: 2.0.2 (Greetings Test) -->
             <!-- Dark Modern Header (LRNit Branding) -->
             <div style="background-color: #1e293b; padding: 40px 24px; text-align: center;">
-              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <!-- Optional Event Logo - LARGE AND PROMINENT -->
-                 ${eventLogoUrl ? `
-                 <div style="margin-bottom: 20px; text-align: center;">
-                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 120px; max-width: 280px; object-fit: contain; display: inline-block;" />
-                 </div>
-                 ` : ''}
-
-                <h2 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">
-                  LRN<span style="color: #60a5fa;">it</span>
-                </h2>
-                <div style="margin-top: 12px; color: rgba(255,255,255,0.5); font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700;">Learn · Build · Lead</div>
-              </div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+                <tr>
+                  <td align="center" style="padding: 0;">
+                    ${eventLogoUrl ? `<img src="${eventLogoUrl}" alt="Event Logo" style="height: 120px; max-width: 280px; width: auto; display: block; margin: 0 auto 18px auto; border: 0; outline: none; text-decoration: none;" />` : ''}
+                    <h2 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1;">
+                      LRN<span style="color: #60a5fa;">it</span>
+                    </h2>
+                    <div style="margin-top: 12px; color: rgba(255,255,255,0.55); font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700; line-height: 1.2;">Learn · Build · Lead</div>
+                  </td>
+                </tr>
+              </table>
             </div>
 
             <!-- Email Body Content -->
