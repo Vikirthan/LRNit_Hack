@@ -717,8 +717,10 @@ export default function AdminPage() {
       setSendingCustom(true)
       try {
         const { data: { user } } = await supabase.auth.getUser()
+        // Convert local datetime to UTC ISO string for database
+        const utcIsoString = new Date(scheduledAt).toISOString()
         const { error } = await supabase.from('scheduled_emails').insert({
-          scheduled_at: scheduledAt,
+          scheduled_at: utcIsoString,
           subject: mailSubject,
           content: mailContent,
           signature: mailSignature,
