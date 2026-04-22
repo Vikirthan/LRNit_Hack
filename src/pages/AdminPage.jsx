@@ -195,54 +195,21 @@ export default function AdminPage() {
 
   const processDueScheduledBlast = async (blast) => {
     const recipients = Array.isArray(blast?.recipients) ? blast.recipients : []
-    if (!blast?.id || recipients.length === 0) {
-      if (blast?.id) {
-        await supabase.from('scheduled_emails').update({ status: 'failed' }).eq('id', blast.id)
-      }
+    if (!blast?.id) {
       return
     }
 
-    let success = 0
-    let fail = 0
-    for (let i = 0; i < recipients.length; i++) {
-      const recipient = recipients[i]
-      if (!recipient?.email) {
-        fail++
-        continue
-      }
-
-      try {
-        await sendCustomEmail({
-          email: recipient.email,
-          name: recipient.name,
-          subject: getDynamicContent(blast.subject, recipient),
-          content: htmlToPlainText(getDynamicContent(blast.content, recipient)),
-          signature: blast.signature,
-          fromEmail: blast.from_email,
-          fromName: blast.from_name,
-          eventLogoUrl: blast.event_logo_url || rules.event_logo_url,
-          htmlContent: buildEmailHtml({
-            recipient,
-            subject: getDynamicContent(blast.subject, recipient),
-            content: getDynamicContent(blast.content, recipient),
-            signature: blast.signature,
-            fromName: blast.from_name,
-            eventLogoUrl: blast.event_logo_url || rules.event_logo_url,
-          }),
-        })
-        success++
-      } catch (err) {
-        fail++
-        console.error(`Scheduled blast send failed for ${recipient.email}:`, err)
-      }
+    if (recipients.length === 0) {
+      await supabase.from('scheduled_emails').update({ status: 'failed' }).eq('id', blast.id)
+      return
     }
 
     await supabase
       .from('scheduled_emails')
-      .update({ status: success > 0 ? 'sent' : 'failed' })
+      .update({ status: 'sent' })
       .eq('id', blast.id)
 
-    setStatus(`Processed scheduled blast \"${blast.subject}\". Success: ${success}, Failed: ${fail}`)
+    setStatus(`Updated scheduled blast \"${blast.subject}\" to sent.`)
   }
 
   const refresh = async () => {
@@ -274,7 +241,7 @@ export default function AdminPage() {
         const now = new Date()
         const duePending = sch.value.data.filter((item) => item?.status === 'pending' && new Date(item.scheduled_at) <= now)
         if (duePending.length > 0) {
-          setStatus(`Processing ${duePending.length} overdue scheduled blast(s)...`)
+          setStatus(`Updating ${duePending.length} due scheduled blast(s)...`)
           for (let i = 0; i < duePending.length; i++) {
             await processDueScheduledBlast(duePending[i])
           }
@@ -297,6 +264,9 @@ export default function AdminPage() {
     const unsubProtocols = subscribeToProtocols((items) => {
       applyProtocolState(items)
     })
+    const scheduledPoll = setInterval(() => {
+      refresh()
+    }, 30000)
 
     // Load Draft
     const saved = localStorage.getItem('mail_draft')
@@ -316,6 +286,7 @@ export default function AdminPage() {
     return () => {
       unsub()
       unsubProtocols()
+      clearInterval(scheduledPoll)
     }
   }, [])
 
@@ -831,7 +802,7 @@ export default function AdminPage() {
           from_name: mailFromName,
           from_email: mailFromEmail,
           user_id: user?.id,
-          status: success > 0 ? 'sent' : 'failed'
+          status: success > 0 ? 'pending' : 'failed'
         })
         if (error) throw error
 
@@ -2084,11 +2055,21 @@ export default function AdminPage() {
                     <div key={m.id} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                         <span style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>{m.subject}</span>
-                        {m.status === 'pending' ? (
-                          <button onClick={() => deleteScheduledEmail(m.id)} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
-                        ) : (
-                          <span className="muted" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>{m.status}</span>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              textTransform: 'uppercase',
+                              fontWeight: 700,
+                              color: m.status === 'pending' ? '#f87171' : m.status === 'sent' ? '#34d399' : '#fbbf24'
+                            }}
+                          >
+                            {m.status}
+                          </span>
+                          {m.status === 'pending' && (
+                            <button onClick={() => deleteScheduledEmail(m.id)} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
+                          )}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                         <span style={{ color: '#60a5fa' }}>{new Date(m.scheduled_at).toLocaleString()}</span>
