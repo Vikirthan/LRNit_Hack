@@ -12,7 +12,30 @@ export default function PublicTicketPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [qrUrl, setQrUrl] = useState('')
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }))
   const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight })
+    }
+
+    updateViewport()
+    window.addEventListener('resize', updateViewport)
+    window.addEventListener('orientationchange', updateViewport)
+
+    return () => {
+      window.removeEventListener('resize', updateViewport)
+      window.removeEventListener('orientationchange', updateViewport)
+    }
+  }, [])
+
+  const isMobile = viewport.width <= 768
+  const isLandscape = viewport.width > viewport.height
+  const isCompactLandscape = isMobile && isLandscape
 
   useEffect(() => {
     async function loadTeam() {
@@ -59,8 +82,14 @@ export default function PublicTicketPage() {
   if (loading) {
     return (
       <div className="login-page">
-        <div className="login-container">
-          <div className="login-feature-card">
+        <div
+          className="login-container public-ticket-container"
+          style={{
+            maxWidth: isCompactLandscape ? '720px' : 'min(100%, 480px)',
+            gridTemplateColumns: '1fr',
+          }}
+        >
+          <div className="login-feature-card" style={{ padding: isCompactLandscape ? '18px' : undefined }}>
             <h2 style={{ color: '#fff' }}>Verifying Ticket...</h2>
             <p className="muted">Please wait while we secure your access</p>
           </div>
@@ -72,8 +101,14 @@ export default function PublicTicketPage() {
   if (error) {
     return (
       <div className="login-page">
-        <div className="login-container">
-          <div className="login-feature-card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+        <div
+          className="login-container public-ticket-container"
+          style={{
+            maxWidth: isCompactLandscape ? '720px' : 'min(100%, 480px)',
+            gridTemplateColumns: '1fr',
+          }}
+        >
+          <div className="login-feature-card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)', padding: isCompactLandscape ? '18px' : undefined }}>
             <h2 style={{ color: '#f87171' }}>⚠️ Invalid Ticket</h2>
             <p className="muted">{error}</p>
             <p style={{ marginTop: '20px', fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>
@@ -91,11 +126,19 @@ export default function PublicTicketPage() {
       <div className="login-bg-orb login-bg-orb-2" style={{ top: '60%', left: '70%', background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)' }} />
       <div className="login-bg-grid" />
 
-      <main className="login-container" style={{ gridTemplateColumns: '1fr', maxWidth: '480px', position: 'relative' }}>
+      <main
+        className="login-container public-ticket-container"
+        style={{
+          gridTemplateColumns: '1fr',
+          maxWidth: isCompactLandscape ? '720px' : 'min(100%, 480px)',
+          position: 'relative',
+          width: '100%',
+        }}
+      >
         <section className="login-auth-panel" style={{ 
           textAlign: 'center', 
           borderRight: 'none', 
-          padding: '40px 32px',
+          padding: isCompactLandscape ? '24px 22px' : '40px 32px',
           background: 'rgba(15, 18, 32, 0.8)',
           backdropFilter: 'blur(40px)',
           borderRadius: '32px',
@@ -117,20 +160,30 @@ export default function PublicTicketPage() {
 
           <div style={{ 
             background: 'white', 
-            padding: '24px', 
+            padding: isCompactLandscape ? '18px' : '24px', 
             borderRadius: '32px', 
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 20px rgba(99, 102, 241, 0.2)',
-            marginBottom: '24px',
+            marginBottom: isCompactLandscape ? '18px' : '24px',
             marginLeft: 'auto',
             marginRight: 'auto',
             position: 'relative',
             overflow: 'hidden'
           }}>
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '6px', background: 'linear-gradient(90deg, #6366f1, #a855f7)' }} />
-            <img src={qrUrl} alt="QR Code" style={{ width: '100%', maxWidth: '240px', height: 'auto', display: 'block', margin: '0 auto' }} />
+            <img
+              src={qrUrl}
+              alt="QR Code"
+              style={{
+                width: '100%',
+                maxWidth: isCompactLandscape ? '180px' : isMobile ? '220px' : '240px',
+                height: 'auto',
+                display: 'block',
+                margin: '0 auto'
+              }}
+            />
           </div>
           
           <button 
@@ -160,12 +213,12 @@ export default function PublicTicketPage() {
             textAlign: 'left', 
             background: 'rgba(255, 255, 255, 0.03)', 
             borderColor: 'rgba(255, 255, 255, 0.06)',
-            padding: '24px',
+            padding: isCompactLandscape ? '18px' : '24px',
             borderRadius: '24px'
           }}>
-             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isCompactLandscape ? '14px' : '20px', gap: '12px' }}>
                 <div>
-                  <h3 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{team.team_name}</h3>
+                  <h3 style={{ margin: '0 0 4px 0', fontSize: isCompactLandscape ? '1.15rem' : '1.4rem', color: '#fff' }}>{team.team_name}</h3>
                   <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>ID: {team.team_id}</span>
                 </div>
                 <div style={{ 
@@ -181,7 +234,7 @@ export default function PublicTicketPage() {
                 </div>
              </div>
 
-             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+             <div style={{ display: 'grid', gridTemplateColumns: isCompactLandscape ? '1fr' : '1fr 1fr', gap: isCompactLandscape ? '12px' : '20px' }}>
                 <div>
                    <p style={{ margin: '0 0 4px 0', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Members</p>
                    <p style={{ margin: 0, color: '#fff', fontWeight: '600' }}>{team.members_count || 0} Participants</p>
@@ -203,7 +256,7 @@ export default function PublicTicketPage() {
              </div>
           </div>
 
-          <p style={{ marginTop: '32px', fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>
+          <p style={{ marginTop: isCompactLandscape ? '20px' : '32px', fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>
             This ticket is unique to your team. Do not share the link.
           </p>
         </section>
