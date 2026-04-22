@@ -5,6 +5,8 @@ export { generateTeamQrToken }
 
 const LOCAL_TEAMS_KEY = 'ticketscan-local-teams'
 const LOCAL_TEAM_VERIFICATION_KEY = 'ticketscan-team-verification-locks'
+const LOCAL_PROTOCOLS_KEY = 'ticketscan-local-protocols'
+const LEGACY_RULES_KEY = 'ticketscan-local-rules'
 
 const defaultRules = {
   max_break_time: 30,
@@ -14,6 +16,198 @@ const defaultRules = {
   jury_mode: 'manual', // 'manual' or 'scan'
   is_active: true,
   event_logo_url: null,
+}
+
+const defaultProtocolName = 'Hackathon Standard'
+
+function normalizeProtocol(protocol = {}) {
+  const id = protocol.id ?? protocol.protocol_id ?? protocol.key ?? null
+  return {
+    id,
+    name: protocol.name || protocol.protocol_name || defaultProtocolName,
+    max_break_time: Number(protocol.max_break_time ?? defaultRules.max_break_time),
+    grace_time: Number(protocol.grace_time ?? defaultRules.grace_time),
+    penalty_per_minute: Number(protocol.penalty_per_minute ?? defaultRules.penalty_per_minute),
+    overdue_email_enabled: Boolean(protocol.overdue_email_enabled ?? defaultRules.overdue_email_enabled),
+    jury_mode: protocol.jury_mode || defaultRules.jury_mode,
+    is_active: Boolean(protocol.is_active ?? true),
+    event_logo_url: protocol.event_logo_url ?? null,
+    created_at: protocol.created_at || new Date().toISOString(),
+    updated_at: protocol.updated_at || new Date().toISOString(),
+  }
+}
+
+function protocolToRulePayload(protocol = {}) {
+  const normalized = normalizeProtocol(protocol)
+  return {
+    ...normalized,
+    // Keep the payload backwards compatible with older callers that expect a single rules object.
+    key: protocol.key || 'rules',
+  }
+}
+
+function protocolFromLegacyRules(rules = {}) {
+  return normalizeProtocol({
+    id: 'legacy-rules',
+    name: rules.name || defaultProtocolName,
+    ...defaultRules,
+    ...rules,
+    is_active: rules.is_active ?? true,
+  })
+}
+
+function readLocalProtocols() {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_PROTOCOLS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed.map(normalizeProtocol)
+    }
+
+    const legacyRaw = window.localStorage.getItem(LEGACY_RULES_KEY)
+    if (legacyRaw) {
+      return [protocolFromLegacyRules(JSON.parse(legacyRaw))]
+    }
+
+    return [normalizeProtocol({ id: 'default', name: defaultProtocolName, is_active: true })]
+  } catch {
+    return [normalizeProtocol({ id: 'default', name: defaultProtocolName, is_active: true })]
+  }
+}
+
+function writeLocalProtocols(protocols) {
+  try {
+    window.localStorage.setItem(LOCAL_PROTOCOLS_KEY, JSON.stringify(protocols.map(normalizeProtocol)))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function setOneProtocolActive(protocols, protocolId) {
+  return protocols.map((protocol) => ({
+    ...protocol,
+    is_active: protocol.id === protocolId,
+  }))
+}
+
+async function canUseSupabaseProtocolWrites() {
+  if (!hasSupabaseConfig || !supabase) return false
+
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) {
+      console.warn('canUseSupabaseProtocolWrites: failed to get session', error)
+      return false
+    }
+    return Boolean(data?.session?.user?.id)
+  } catch (err) {
+    console.warn('canUseSupabaseProtocolWrites: unexpected session error', err)
+    return false
+  }
+}
+
+async function persistProtocolActivation(protocolId) {
+  if (!supabase) return
+
+  const { error: deactivateError } = await supabase
+    .from('event_protocols')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('is_active', true)
+
+  if (deactivateError) throw deactivateError
+
+  const { error: activateError } = await supabase
+    .from('event_protocols')
+    .update({ is_active: true, updated_at: new Date().toISOString() })
+    .eq('id', protocolId)
+
+  if (activateError) throw activateError
+}
+
+async function persistLocalProtocolUpdate(protocols, updatedProtocol, activateSelected = false) {
+  const nextProtocols = protocols.map((protocol) => {
+    if (protocol.id === updatedProtocol.id) {
+      return normalizeProtocol(updatedProtocol)
+    }
+    return activateSelected ? { ...normalizeProtocol(protocol), is_active: false } : normalizeProtocol(protocol)
+  })
+
+  if (!nextProtocols.some((protocol) => protocol.id === updatedProtocol.id)) {
+    nextProtocols.push(normalizeProtocol(updatedProtocol))
+  }
+
+  const normalized = activateSelected ? setOneProtocolActive(nextProtocols, updatedProtocol.id) : nextProtocols
+  writeLocalProtocols(normalized)
+  return normalized
+}
+
+async function persistProtocolToBackend(protocol, { activate = false } = {}) {
+  if (!supabase) return normalizeProtocol(protocol)
+
+  const shouldActivate = activate || Boolean(protocol.is_active)
+  const payload = {
+    name: protocol.name || defaultProtocolName,
+    max_break_time: Number(protocol.max_break_time ?? defaultRules.max_break_time),
+    grace_time: Number(protocol.grace_time ?? defaultRules.grace_time),
+    penalty_per_minute: Number(protocol.penalty_per_minute ?? defaultRules.penalty_per_minute),
+    overdue_email_enabled: Boolean(protocol.overdue_email_enabled ?? defaultRules.overdue_email_enabled),
+    jury_mode: protocol.jury_mode || defaultRules.jury_mode,
+    is_active: false,
+    event_logo_url: protocol.event_logo_url ?? null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (protocol.id && protocol.id !== 'default' && protocol.id !== 'legacy-rules') {
+    payload.id = protocol.id
+  }
+
+  const writeResult = payload.id
+    ? await supabase.from('event_protocols').upsert(payload, { onConflict: 'id' }).select('*').maybeSingle()
+    : await supabase.from('event_protocols').insert(payload).select('*').maybeSingle()
+
+  const { data, error } = writeResult
+
+  if (error) throw error
+  const saved = normalizeProtocol(data || payload)
+
+  if (shouldActivate) {
+    if (!saved.id) throw new Error('Saved protocol is missing an ID')
+    await persistProtocolActivation(saved.id)
+    return { ...saved, is_active: true }
+  }
+
+  return saved
+}
+
+async function loadProtocolsFromBackend() {
+  if (!supabase) return readLocalProtocols()
+
+  const { data, error } = await supabase
+    .from('event_protocols')
+    .select('*')
+    .order('is_active', { ascending: false })
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+
+  const mapped = (data ?? []).map(normalizeProtocol)
+  if (mapped.length === 0) return readLocalProtocols()
+
+  writeLocalProtocols(mapped)
+  return mapped
+}
+
+async function persistProtocolSetActive(protocolId) {
+  if (!protocolId) throw new Error('Protocol ID is required')
+  if (!supabase) {
+    const next = setOneProtocolActive(readLocalProtocols(), protocolId)
+    writeLocalProtocols(next)
+    return next
+  }
+
+  await persistProtocolActivation(protocolId)
+  const refreshed = await loadProtocolsFromBackend()
+  return refreshed
 }
 
 const CRITERIA_MAX_BY_KEY = TEACHER_CRITERIA.reduce((acc, criterion) => {
@@ -148,6 +342,18 @@ function mergeLocalTeam(team) {
   return nextTeam
 }
 
+function normalizeJuryTeam(team = {}) {
+  return {
+    team_id: team.team_id,
+    team_name: team.team_name,
+    room_number: team.room_number || '',
+    is_present: Boolean(team.is_present),
+    github_verified: Boolean(team.github_verified),
+    documentation_verified: Boolean(team.documentation_verified),
+    updated_at: team.updated_at || new Date().toISOString(),
+  }
+}
+
 const LOCAL_RULES_KEY = 'ticketscan-local-rules'
 
 function readLocalRules() {
@@ -168,61 +374,134 @@ function writeLocalRules(rules) {
 }
 
 export async function getRules() {
-  if (!hasSupabaseConfig || !supabase) return readLocalRules()
-
   try {
-    const { data, error } = await supabase.from('settings').select('*').eq('key', 'rules').maybeSingle()
-    if (error) throw error
-    // In mixed-schema deployments, prefer local cache so unsupported DB columns
-    // do not revert UI values after save.
-    const merged = data ? { ...defaultRules, ...data, ...readLocalRules() } : { ...readLocalRules() }
-    writeLocalRules(merged) // cache locally
-    return merged
+    const protocols = await getProtocols()
+    const activeProtocol = protocols.find((protocol) => protocol.is_active)
+    if (activeProtocol) return activeProtocol
+
+    const latestProtocol = protocols[0]
+    if (latestProtocol) {
+      return {
+        ...latestProtocol,
+        is_active: false,
+      }
+    }
+
+    return normalizeProtocol({ id: 'default', name: defaultProtocolName, is_active: false })
   } catch (err) {
-    console.warn('getRules: Supabase failed, falling back to local', err)
-    return readLocalRules()
+    console.warn('getRules: falling back to local protocol cache', err)
+    const localProtocols = readLocalProtocols()
+    const activeLocalProtocol = localProtocols.find((protocol) => protocol.is_active)
+    if (activeLocalProtocol) return activeLocalProtocol
+
+    if (localProtocols[0]) {
+      return {
+        ...localProtocols[0],
+        is_active: false,
+      }
+    }
+
+    return normalizeProtocol({ id: 'default', name: defaultProtocolName, is_active: false })
   }
 }
 
 export async function saveRules(payload) {
-  // Always update locally for instant UI feedback
-  const merged = { ...readLocalRules(), ...payload }
-  writeLocalRules(merged)
-
-  if (!hasSupabaseConfig || !supabase) return
-
   try {
-    // Only send columns that are expected by the settings table to avoid schema cache errors
-    const allowed = ['key', 'max_break_time', 'grace_time', 'penalty_per_minute', 'overdue_email_enabled', 'jury_mode', 'is_active', 'event_logo_url', 'updated_at']
-    let toUpsert = { key: 'rules', updated_at: new Date().toISOString() }
-    for (const k of Object.keys(payload || {})) {
-      if (allowed.includes(k)) toUpsert[k] = payload[k]
-    }
+    const protocols = readLocalProtocols()
+    const current = protocols.find((protocol) => protocol.id === payload.id) || protocols.find((protocol) => protocol.is_active) || protocols[0]
+    const nextProtocol = normalizeProtocol({
+      ...current,
+      ...payload,
+      id: payload.id || current?.id || 'default',
+    })
 
-    // Backward-compat: older deployments can miss one or more optional columns.
-    // Retry by removing the missing column reported by PostgREST schema cache.
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const { error } = await supabase.from('settings').upsert(toUpsert)
-      if (!error) return
+    const nextProtocols = await persistLocalProtocolUpdate(protocols, nextProtocol, Boolean(nextProtocol.is_active))
+    writeLocalProtocols(nextProtocols)
 
-      const msg = String(error.message || '')
-      const missingColMatch = msg.match(/Could not find the '([^']+)' column/i)
-      const missingCol = missingColMatch?.[1]
+    if (!(await canUseSupabaseProtocolWrites())) return nextProtocol
 
-      if (!missingCol || !Object.prototype.hasOwnProperty.call(toUpsert, missingCol)) {
-        throw error
-      }
-
-      const { [missingCol]: _removed, ...nextUpsert } = toUpsert
-      toUpsert = nextUpsert
-    }
-
-    throw new Error('Failed to save rules after compatibility retries')
+    const saved = await persistProtocolToBackend(nextProtocol, { activate: Boolean(nextProtocol.is_active) })
+    await loadProtocolsFromBackend()
+    return saved
   } catch (err) {
-    console.warn('saveRules: Supabase failed, rules saved locally only', err)
-    // Rethrow so callers can react to failures (avoid silent reconciliation reverting UI)
+    console.warn('saveRules: failed to save protocol', err)
     throw err
   }
+}
+
+export async function getProtocols() {
+  if (!hasSupabaseConfig || !supabase) return readLocalProtocols()
+  try {
+    return await loadProtocolsFromBackend()
+  } catch (err) {
+    console.warn('getProtocols: falling back to local protocol cache', err)
+    return readLocalProtocols()
+  }
+}
+
+export async function createProtocol(payload) {
+  const protocolId = payload?.id || (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : null)
+  const protocol = normalizeProtocol({
+    name: payload?.name || defaultProtocolName,
+    ...defaultRules,
+    ...payload,
+    id: protocolId,
+    is_active: Boolean(payload?.is_active),
+  })
+
+  const localProtocols = readLocalProtocols()
+  const nextLocal = protocol.is_active
+    ? setOneProtocolActive([...localProtocols.filter((item) => item.id !== protocol.id), protocol], protocol.id)
+    : [...localProtocols.filter((item) => item.id !== protocol.id), protocol]
+  writeLocalProtocols(nextLocal)
+
+  if (!(await canUseSupabaseProtocolWrites())) return protocol
+
+  const saved = await persistProtocolToBackend(protocol, { activate: protocol.is_active })
+  await loadProtocolsFromBackend()
+  return saved
+}
+
+export async function activateProtocol(protocolId) {
+  if (!(await canUseSupabaseProtocolWrites())) {
+    const next = setOneProtocolActive(readLocalProtocols(), protocolId)
+    writeLocalProtocols(next)
+    return next
+  }
+  return persistProtocolSetActive(protocolId)
+}
+
+export async function deactivateProtocol(protocolId) {
+  if (!protocolId) throw new Error('Protocol ID is required')
+
+  if (!(await canUseSupabaseProtocolWrites())) {
+    const next = readLocalProtocols().map((protocol) => (
+      protocol.id === protocolId ? { ...protocol, is_active: false, updated_at: new Date().toISOString() } : protocol
+    ))
+    writeLocalProtocols(next)
+    return next
+  }
+
+  const { error } = await supabase
+    .from('event_protocols')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', protocolId)
+
+  if (error) throw error
+  return loadProtocolsFromBackend()
+}
+
+export async function deleteProtocol(protocolId) {
+  if (!protocolId) throw new Error('Protocol ID is required')
+  if (!(await canUseSupabaseProtocolWrites())) {
+    const next = readLocalProtocols().filter((protocol) => protocol.id !== protocolId)
+    writeLocalProtocols(next.length ? next : [normalizeProtocol({ id: 'default', name: defaultProtocolName, is_active: true })])
+    return true
+  }
+
+  const { error } = await supabase.from('event_protocols').delete().eq('id', protocolId)
+  if (error) throw error
+  return true
 }
 
 export async function upsertTeam(team) {
@@ -374,6 +653,60 @@ export async function verifyScanToken(token) {
   return teamData
 }
 
+export async function verifyJuryScanToken(token) {
+  if (!supabase) throw new Error('Supabase is not configured yet')
+
+  const invokeResult = await supabase.functions.invoke('verify-qr-token', {
+    body: { token },
+  })
+
+  if (invokeResult.error) {
+    let serverMsg = invokeResult.error.message || 'Edge function error'
+    try {
+      if (invokeResult.data) {
+        const parsed = typeof invokeResult.data === 'string' ? JSON.parse(invokeResult.data) : invokeResult.data
+        if (parsed?.error) serverMsg = parsed.error
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+    throw new Error(serverMsg)
+  }
+
+  const data = invokeResult.data
+  const teamId = data?.teamId
+  if (!teamId) throw new Error('Invalid QR token')
+
+  const { data: teamData, error: teamError } = await supabase
+    .from('teams')
+    .select('team_id, team_name, room_number, is_present, github_verified, documentation_verified, updated_at')
+    .eq('team_id', teamId)
+    .eq('is_present', true)
+    .maybeSingle()
+
+  if (teamError) throw teamError
+  if (!teamData) throw new Error('Team has not been admitted by volunteers yet')
+
+  return normalizeJuryTeam(teamData)
+}
+
+export async function getAdmittedTeamsForJury() {
+  if (!supabase) {
+    return readLocalTeams()
+      .filter((team) => team.is_present === true)
+      .map(normalizeJuryTeam)
+  }
+
+  const { data, error } = await supabase
+    .from('teams')
+    .select('team_id, team_name, room_number, is_present, github_verified, documentation_verified, updated_at')
+    .eq('is_present', true)
+    .order('team_name', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []).map(normalizeJuryTeam)
+}
+
 export async function searchTeamsByName(queryText) {
   if (!supabase) {
     const query = queryText.trim().toLowerCase()
@@ -389,12 +722,12 @@ export async function searchTeamsByName(queryText) {
 
   const { data, error } = await supabase
     .from('teams')
-    .select('*')
+    .select('team_id, team_name, room_number, is_present, github_verified, documentation_verified, updated_at')
     .or(`team_name.ilike.%${query}%,team_id.ilike.%${query}%`)
     .limit(15)
 
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map(normalizeJuryTeam)
 }
 
 export async function applyManualPenalty(teamId, delta, reason = 'manual_override') {
@@ -704,6 +1037,26 @@ export function subscribeToTeams(onUpdate) {
   }
 }
 
+export function subscribeToAdmittedTeams(onUpdate) {
+  if (!supabase) return () => {}
+
+  const channel = supabase
+    .channel('public:teams:admitted')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, async () => {
+      try {
+        const teams = await getAdmittedTeamsForJury()
+        onUpdate(teams)
+      } catch (err) {
+        console.error('Error fetching admitted teams for jury:', err)
+      }
+    })
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
 export function subscribeToRules(onUpdate) {
   // Poll localStorage for rule changes (covers admin saving locally)
   const pollInterval = setInterval(async () => {
@@ -716,12 +1069,38 @@ export function subscribeToRules(onUpdate) {
   if (!supabase) return () => clearInterval(pollInterval)
 
   const channel = supabase
-    .channel('public:settings')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.rules' }, async (payload) => {
-      // Keep local compatibility values from being overwritten by partial DB rows.
-      const merged = { ...defaultRules, ...payload.new, ...readLocalRules() }
-      writeLocalRules(merged)
-      onUpdate(merged)
+    .channel('public:event_protocols:active')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'event_protocols' }, async () => {
+      const rules = await getRules()
+      onUpdate(rules)
+    })
+    .subscribe()
+
+  return () => {
+    clearInterval(pollInterval)
+    supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToProtocols(onUpdate) {
+  const pollInterval = setInterval(async () => {
+    try {
+      const protocols = await getProtocols()
+      onUpdate(protocols)
+    } catch { /* ignore */ }
+  }, 3000)
+
+  if (!supabase) return () => clearInterval(pollInterval)
+
+  const channel = supabase
+    .channel('public:event_protocols')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'event_protocols' }, async () => {
+      try {
+        const protocols = await getProtocols()
+        onUpdate(protocols)
+      } catch (err) {
+        console.error('Error fetching protocols on update:', err)
+      }
     })
     .subscribe()
 

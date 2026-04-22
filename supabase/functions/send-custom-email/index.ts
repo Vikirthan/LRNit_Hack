@@ -4,6 +4,46 @@ const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
 const SENDER_EMAIL = Deno.env.get("SENDER_EMAIL") || "no-reply@ticketscan.org";
 const SENDER_NAME = Deno.env.get("SENDER_NAME") || "TicketScan Support";
 
+const isValidEmail = (value?: string) => {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+};
+
+const stripHtml = (html = "") =>
+  html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const mimeTypeFromName = (name: string) => {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".doc")) return "application/msword";
+  if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+  if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  return "application/octet-stream";
+};
+
+const base64FromUrl = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch logo from ${url}`);
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  const contentType = response.headers.get("content-type") || "image/svg+xml";
+  return { content: btoa(binary), contentType };
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -19,14 +59,31 @@ serve(async (req) => {
   }
 
   try {
-    const { email, name, subject, content, signature, fromEmail, fromName, scheduledAt, eventLogoUrl, htmlContent } = await req.json();
+    const { email, name, subject, content, signature, fromEmail, fromName, scheduledAt, eventLogoUrl, htmlContent, attachments } = await req.json();
 
     if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY is not set in Supabase secrets");
     if (!email) throw new Error("Recipient email is required");
 
     // 2. Send via Brevo (SMTP API v3)
+    const inlineAttachments: any[] = [];
+
+    if (eventLogoUrl) {
+      try {
+        const logo = await base64FromUrl(eventLogoUrl);
+        inlineAttachments.push({
+          name: "event-logo",
+          content: logo.content,
+          contentType: logo.contentType,
+          contentId: "event-logo",
+        });
+      } catch (logoError) {
+        console.warn("Logo embed skipped:", logoError.message);
+      }
+    }
+
     const payload: any = {
-      sender: { name: fromName || SENDER_NAME, email: fromEmail || SENDER_EMAIL },
+      // Always use authenticated sender identity to improve SPF/DKIM/DMARC alignment.
+      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email, name }],
       subject: subject || "Update from Event Team",
       htmlContent: htmlContent || `
@@ -53,11 +110,11 @@ serve(async (req) => {
                 <div style="margin-top: 8px; color: rgba(255,255,255,0.4); font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 800;">Learn · Build · Lead</div>
 
                 <!-- Optional Event Logo -->
-                ${eventLogoUrl ? `
-                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); width: 100%;">
-                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 40px; max-width: 180px; object-fit: contain;" />
-                </div>
-                ` : ''}
+                 ${eventLogoUrl ? `
+                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); width: 100%;">
+                   <img src="cid:event-logo" alt="Event Logo" style="height: 40px; max-width: 180px; object-fit: contain;" />
+                 </div>
+                 ` : ''}
               </div>
             </div>
 
@@ -76,7 +133,7 @@ serve(async (req) => {
                   ${signature ? signature.replace(/\n/g, '<br/>') : `Best Regards,<br/>${fromName || 'LRNit Team'}`}
                 </div>
                 ${eventLogoUrl ? `
-                  <img src="${eventLogoUrl}" alt="Signature Logo" style="height: 32px; margin-top: 12px; opacity: 0.8;" />
+                  <img src="cid:event-logo" alt="Signature Logo" style="height: 32px; margin-top: 12px; opacity: 0.8;" />
                 ` : ''}
               </div>
             </div>
@@ -101,8 +158,29 @@ serve(async (req) => {
       `,
     };
 
+    const preferredReplyTo = isValidEmail(fromEmail) ? fromEmail!.trim() : null;
+    if (preferredReplyTo) {
+      payload.replyTo = { email: preferredReplyTo, name: fromName || SENDER_NAME };
+    }
+
+    payload.textContent = stripHtml(content || "") || stripHtml(payload.htmlContent || "");
+
     if (scheduledAt) {
       payload.scheduledAt = scheduledAt;
+    }
+
+    const fileAttachments = Array.isArray(attachments)
+      ? attachments
+          .filter((item: any) => item && typeof item.name === "string" && typeof item.content === "string")
+          .map((item: any) => ({
+            name: item.name,
+            content: item.content,
+            contentType: item.contentType || mimeTypeFromName(item.name),
+          }))
+      : [];
+
+    if (inlineAttachments.length > 0 || fileAttachments.length > 0) {
+      payload.attachment = [...inlineAttachments, ...fileAttachments];
     }
 
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {

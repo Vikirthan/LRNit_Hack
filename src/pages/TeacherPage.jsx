@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
 import { TEACHER_CRITERIA, TEACHER_CRITERIA_TOTAL } from '../constants/teacherCriteria'
-import { getTeams, saveTeacherScore, subscribeToTeams, verifyScanToken, getRules, subscribeToRules } from '../services/teamService'
+import { getAdmittedTeamsForJury, getTeacherScores, saveTeacherScore, subscribeToAdmittedTeams, verifyJuryScanToken, getRules, subscribeToRules } from '../services/teamService'
 import QrScanner from '../components/QrScanner'
 
 const STORAGE_KEY = 'ticketscan-teacher-scores'
@@ -37,6 +37,10 @@ function saveScores(payload) {
   }
 }
 
+function isTeamAdmitted(team) {
+  return team?.is_present === true
+}
+
 export default function TeacherPage() {
   const { profile, logout } = useAuth()
   const [teams, setTeams] = useState([])
@@ -53,13 +57,35 @@ export default function TeacherPage() {
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [filter, setFilter] = useState('')
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [duplicateConfirm, setDuplicateConfirm] = useState(false)
+  const [remoteScoredTeamIds, setRemoteScoredTeamIds] = useState(() => new Set())
+
+  const teacherName = profile?.full_name || profile?.email || 'Teacher'
+  const isTeamAlreadyScored = (teamId) => {
+    if (!teamId || teamId === '-') return false
+    return Boolean(savedScores[teamId]) || remoteScoredTeamIds.has(teamId)
+  }
 
   const refreshTeams = async () => {
     try {
-      const [items, sets] = await Promise.all([getTeams(), getRules()])
-      if (items && items.length > 0) {
-        setTeams(items)
-        setTeam((prev) => items.find((item) => item.team_id === prev.team_id) || items[0])
+      const [admittedTeams, sets, scoreRows] = await Promise.all([getAdmittedTeamsForJury(), getRules(), getTeacherScores()])
+
+      if (admittedTeams.length > 0) {
+        setTeams(admittedTeams)
+        setTeam((prev) => admittedTeams.find((item) => item.team_id === prev.team_id) || admittedTeams[0])
+      } else {
+        setTeams([])
+        setTeam({ team_id: '-', team_name: 'No admitted team selected', room_number: '-' })
+      }
+
+      if (Array.isArray(scoreRows)) {
+        const next = new Set(
+          scoreRows
+            .filter((row) => row?.teacher_name === teacherName)
+            .map((row) => row.team_id)
+            .filter(Boolean),
+        )
+        setRemoteScoredTeamIds(next)
       }
       if (sets) setRules(sets)
       setStatus('Ready to score')
@@ -74,8 +100,13 @@ export default function TeacherPage() {
     setProcessing(true)
     setStatus('⌛ Scanning team...')
     try {
-      const found = await verifyScanToken(token)
+      const found = await verifyJuryScanToken(token)
       if ('vibrate' in navigator) navigator.vibrate(100)
+
+      if (!isTeamAdmitted(found)) {
+        setStatus(`Team ${found.team_id} is not admitted by volunteers yet.`)
+        return
+      }
       
       // Open confirmation modal instead of loading directly
       setPendingTeam(found)
@@ -101,14 +132,23 @@ export default function TeacherPage() {
     setTeam(pendingTeam)
     setPendingTeam(null)
     setIsConfirmed(false)
-    setStatus(`Ready to evalutate ${pendingTeam.team_name}`)
+    if (isTeamAlreadyScored(pendingTeam.team_id)) {
+      setStatus(`⚠ ${pendingTeam.team_name} already has your score. Re-submit requires confirmation.`)
+    } else {
+      setStatus(`Ready to evaluate ${pendingTeam.team_name}`)
+    }
   }
 
   useEffect(() => {
     refreshTeams()
-    const unsubscribe = subscribeToTeams((updatedTeams) => {
-      setTeams(updatedTeams)
-      setTeam((prev) => updatedTeams.find((item) => item.team_id === prev.team_id) || updatedTeams[0])
+    const unsubscribe = subscribeToAdmittedTeams((updatedTeams) => {
+      const admittedTeams = Array.isArray(updatedTeams) ? updatedTeams : []
+      setTeams(admittedTeams)
+      if (admittedTeams.length > 0) {
+        setTeam((prev) => admittedTeams.find((item) => item.team_id === prev.team_id) || admittedTeams[0])
+      } else {
+        setTeam({ team_id: '-', team_name: 'No admitted team selected', room_number: '-' })
+      }
     })
     const unsubRules = subscribeToRules((newRules) => {
       if (newRules) setRules(newRules)
@@ -152,8 +192,22 @@ export default function TeacherPage() {
 
   const saveScore = async () => {
     try {
+      if (!team?.team_id || team.team_id === '-') {
+        setStatus('No admitted team selected for scoring.')
+        return
+      }
+
+      if (!isTeamAdmitted(team)) {
+        setStatus('This team has not been scanned by the volunteer team yet.')
+        return
+      }
+
+      if (isTeamAlreadyScored(team.team_id) && !duplicateConfirm) {
+        setStatus('Confirmation required to re-score this team.')
+        return
+      }
+
       setShowSubmitConfirm(false)
-      const teacherName = profile?.full_name || profile?.email || 'Teacher'
       await saveTeacherScore(
         team.team_id,
         effectiveScoreByCriterion,
@@ -177,7 +231,13 @@ export default function TeacherPage() {
 
       const next = { ...savedScores, [team.team_id]: payload }
       setSavedScores(next)
+      setRemoteScoredTeamIds((prev) => {
+        const updated = new Set(prev)
+        updated.add(team.team_id)
+        return updated
+      })
       saveScores(next)
+      setDuplicateConfirm(false)
       if ('vibrate' in navigator) navigator.vibrate([100, 50, 100])
       setStatus(`✓ Successfully saved evaluation for ${team.team_name}`)
     } catch (err) {
@@ -187,6 +247,8 @@ export default function TeacherPage() {
 
   const scoredCount = Object.keys(savedScores).length
   const currentSaved = savedScores[team.team_id]
+  const alreadyScoredCurrentTeam = isTeamAlreadyScored(team.team_id)
+  const currentTeamAdmitted = isTeamAdmitted(team)
 
   return (
     <div className="login-page">
@@ -404,7 +466,16 @@ export default function TeacherPage() {
                 style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '16px', color: '#fff', fontSize: '1rem', outline: 'none', transition: 'all 0.3s ease' }}
               />
               <div style={{ display: 'flex', gap: '20px', marginTop: '32px' }}>
-                <button onClick={() => setShowSubmitConfirm(true)} className="login-submit" style={{ flex: 2, padding: '16px' }}>Submit Evaluation</button>
+                <button
+                  onClick={() => {
+                    setDuplicateConfirm(false)
+                    setShowSubmitConfirm(true)
+                  }}
+                  className="login-submit"
+                  style={{ flex: 2, padding: '16px' }}
+                >
+                  Submit Evaluation
+                </button>
                 <button onClick={() => { setScoreByCriterion(buildEmptyScores()); setRemarks('') }} className="login-tab" style={{ flex: 1, background: 'rgba(255, 255, 255, 0.04)', color: '#fff' }}>Clear Draft</button>
               </div>
             </div>
@@ -472,6 +543,16 @@ export default function TeacherPage() {
                 </div>
               </div>
 
+              {alreadyScoredCurrentTeam && currentTeamAdmitted && (
+                <div style={{ marginBottom: '28px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.35)', borderRadius: '16px', padding: '14px 16px' }}>
+                  <p style={{ color: '#fbbf24', fontSize: '0.9rem', fontWeight: 700, margin: '0 0 10px 0' }}>This team already has your saved score.</p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.9)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={duplicateConfirm} onChange={(e) => setDuplicateConfirm(e.target.checked)} />
+                    <span>I confirm I want to score this team again and overwrite my previous score.</span>
+                  </label>
+                </div>
+              )}
+
               {remarks && (
                 <div style={{ marginBottom: '28px' }}>
                   <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>Remarks</p>
@@ -488,7 +569,13 @@ export default function TeacherPage() {
                 <button 
                   onClick={saveScore} 
                   className="login-submit" 
-                  style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', boxShadow: '0 8px 30px rgba(59, 130, 246, 0.4)' }}
+                  disabled={!currentTeamAdmitted || (alreadyScoredCurrentTeam && !duplicateConfirm)}
+                  style={{
+                    background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                    boxShadow: '0 8px 30px rgba(59, 130, 246, 0.4)',
+                    opacity: (!currentTeamAdmitted || (alreadyScoredCurrentTeam && !duplicateConfirm)) ? 0.55 : 1,
+                    cursor: (!currentTeamAdmitted || (alreadyScoredCurrentTeam && !duplicateConfirm)) ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   Final Jury Approval
                 </button>

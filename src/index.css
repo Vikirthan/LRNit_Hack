@@ -30,6 +30,9 @@
   .scanner-box { height: 320px !important; overflow: hidden; border-radius: 16px; margin: 0 auto; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
   .scanner-box video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
   .login-page { place-items: start center !important; overflow-y: auto !important; overflow-x: hidden !important; padding: 10px !important; }
+  .public-ticket-page { place-items: center !important; padding: 14px !important; }
+  .public-ticket-page .login-container { width: min(100%, 480px) !important; margin: auto !important; }
+  .public-ticket-page .login-auth-panel { margin: auto !important; }
   .volunteer-page .login-auth-panel { margin-bottom: 40px; }
   .mailing-center { flex-direction: column !important; gap: 24px !important; }
   .mailing-center > div { width: 100% !important; }
@@ -78,6 +81,16 @@
 }
 
 @media (max-width: 960px) and (orientation: landscape) {
+  .public-ticket-page {
+    place-items: center !important;
+    padding: 12px !important;
+  }
+
+  .public-ticket-page .login-container {
+    width: min(100%, 560px) !important;
+    margin: auto !important;
+  }
+
   .tab-nav {
     position: static !important;
     overflow-x: auto !important;

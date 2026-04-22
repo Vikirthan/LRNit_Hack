@@ -9,13 +9,18 @@ import {
   getTeacherScores, 
   getRules, 
   saveRules as updateRules,
+  getProtocols,
+  createProtocol,
+  activateProtocol,
+  deactivateProtocol,
+  deleteProtocol,
+  subscribeToProtocols,
   sendQrEmails,
   sendAbsentAlert,
   getActivityLog,
   generateTeamQrToken,
   deleteTeamsBySource,
   verifyScanToken,
-  subscribeToRules,
   setTeamVerificationLocks
 } from '../services/teamService'
 import { ADMIN_VERIFICATION_CRITERIA, TEACHER_CRITERIA } from '../constants/teacherCriteria'
@@ -41,12 +46,23 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [teams, setTeams] = useState([])
   const [teacherScores, setTeacherScores] = useState([])
+  const [protocols, setProtocols] = useState([])
   const [rules, setRules] = useState({ 
     max_break_time: 15, 
     grace_time: 5, 
     penalty_per_minute: 1,
     is_active: true,
     jury_mode: 'manual'
+  })
+  const [newProtocol, setNewProtocol] = useState({
+    name: '',
+    max_break_time: 15,
+    grace_time: 5,
+    penalty_per_minute: 1,
+    overdue_email_enabled: false,
+    jury_mode: 'manual',
+    is_active: false,
+    event_logo_url: '',
   })
   const [logs, setLogs] = useState([])
   const [accounts, setAccounts] = useState([])
@@ -83,27 +99,124 @@ export default function AdminPage() {
   const [manualRecipientName, setManualRecipientName] = useState('')
   const [manualRecipientEmail, setManualRecipientEmail] = useState('')
 
+  const resetNewProtocol = () => setNewProtocol({
+    name: '',
+    max_break_time: 15,
+    grace_time: 5,
+    penalty_per_minute: 1,
+    overdue_email_enabled: false,
+    jury_mode: 'manual',
+    is_active: false,
+    event_logo_url: '',
+  })
+
+  const applyProtocolState = (items) => {
+    const protocolItems = Array.isArray(items) ? [...items] : []
+    protocolItems.sort((a, b) => {
+      if (Boolean(b.is_active) !== Boolean(a.is_active)) {
+        return Number(Boolean(b.is_active)) - Number(Boolean(a.is_active))
+      }
+      const aTime = new Date(a.updated_at || 0).getTime()
+      const bTime = new Date(b.updated_at || 0).getTime()
+      return bTime - aTime
+    })
+
+    setProtocols(protocolItems)
+
+    const active = protocolItems.find((item) => item.is_active)
+    const selected = active || protocolItems[0]
+    if (selected) {
+      setRules({
+        ...selected,
+        is_active: Boolean(active),
+        penalty_per_minute: Number(selected.penalty_per_minute ?? selected.penalty_per_unit ?? 1),
+      })
+    }
+  }
+
+  const handleCreateProtocol = async () => {
+    try {
+      const payload = {
+        ...newProtocol,
+        max_break_time: Number(newProtocol.max_break_time ?? 15),
+        grace_time: Number(newProtocol.grace_time ?? 5),
+        penalty_per_minute: Number(newProtocol.penalty_per_minute ?? 1),
+        overdue_email_enabled: Boolean(newProtocol.overdue_email_enabled),
+        is_active: Boolean(newProtocol.is_active),
+        event_logo_url: newProtocol.event_logo_url || null,
+      }
+
+      await createProtocol(payload)
+      const latestProtocols = await getProtocols()
+      applyProtocolState(latestProtocols)
+      setStatus(payload.is_active ? 'New protocol added and activated' : 'New protocol added')
+      resetNewProtocol()
+    } catch (err) {
+      setStatus(`Protocol save failed: ${err.message}`)
+    }
+  }
+
+  const handleProtocolToggle = async (protocol) => {
+    try {
+      let nextProtocols = []
+      if (protocol.is_active) {
+        nextProtocols = await deactivateProtocol(protocol.id)
+        setStatus(`${protocol.name} deactivated`)
+      } else {
+        nextProtocols = await activateProtocol(protocol.id)
+        setStatus(`${protocol.name} activated`)
+      }
+
+      if (Array.isArray(nextProtocols) && nextProtocols.length > 0) {
+        applyProtocolState(nextProtocols)
+      } else {
+        const latestProtocols = await getProtocols()
+        applyProtocolState(latestProtocols)
+      }
+    } catch (err) {
+      setStatus(`Protocol update failed: ${err.message}`)
+    }
+  }
+
+  const handleProtocolDelete = async (protocol) => {
+    const protocolName = protocol?.name || 'this protocol'
+    const ok = window.confirm(`Delete ${protocolName}? This action cannot be undone.`)
+    if (!ok) return
+
+    try {
+      await deleteProtocol(protocol.id)
+      const latestProtocols = await getProtocols()
+      applyProtocolState(latestProtocols)
+      setStatus(`${protocolName} deleted`)
+    } catch (err) {
+      setStatus(`Protocol delete failed: ${err.message}`)
+    }
+  }
+
   const refresh = async () => {
     try {
-      const [t, s, r, a, l, sch] = await Promise.all([
+      const [t, s, p, r, a, l, sch] = await Promise.allSettled([
         getTeams(),
         getTeacherScores(),
+        getProtocols(),
         getRules(),
         getAllAccounts(),
         getActivityLog(),
         supabase.from('scheduled_emails').select('*').order('scheduled_at', { ascending: true })
       ])
-      setTeams(t)
-      setTeacherScores(s)
-      if (r) {
+
+      if (t.status === 'fulfilled') setTeams(t.value)
+      if (s.status === 'fulfilled') setTeacherScores(s.value)
+      if (p.status === 'fulfilled') applyProtocolState(p.value)
+      if (r.status === 'fulfilled' && r.value) {
         setRules({
-          ...r,
-          penalty_per_minute: Number(r.penalty_per_minute ?? r.penalty_per_unit ?? 1),
+          ...r.value,
+          penalty_per_minute: Number(r.value.penalty_per_minute ?? r.value.penalty_per_unit ?? 1),
         })
       }
-      setAccounts(a)
-      setLogs(l)
-      if (sch.data) setScheduledMails(sch.data)
+      if (a.status === 'fulfilled') setAccounts(a.value)
+      if (l.status === 'fulfilled') setLogs(l.value)
+      if (sch.status === 'fulfilled' && sch.value?.data) setScheduledMails(sch.value.data)
     } catch (err) {
       console.error('Refresh error:', err)
     }
@@ -112,13 +225,8 @@ export default function AdminPage() {
   useEffect(() => {
     refresh()
     const unsub = subscribeToTeams(refresh)
-    const unsubRules = subscribeToRules((newRules) => {
-      if (newRules) {
-        setRules({
-          ...newRules,
-          penalty_per_minute: Number(newRules.penalty_per_minute ?? newRules.penalty_per_unit ?? 1),
-        })
-      }
+    const unsubProtocols = subscribeToProtocols((items) => {
+      applyProtocolState(items)
     })
 
     // Load Draft
@@ -138,7 +246,7 @@ export default function AdminPage() {
 
     return () => {
       unsub()
-      unsubRules()
+      unsubProtocols()
     }
   }, [])
 
@@ -788,6 +896,7 @@ export default function AdminPage() {
       'Room': t.room_number || 'N/A',
       'Penalty Points': t.penalty_points || 0,
       'Status': t.active_out ? 'ON BREAK' : 'IN VENUE',
+      'Attendance': t.is_present ? 'PRESENT' : 'AB',
       'QR Link': `${window.location.origin}/scan?token=${t.qr_token || 'TOKEN_PENDING'}`
     }))
 
@@ -830,6 +939,7 @@ export default function AdminPage() {
       name: t.team_name, 
       id: t.team_id, 
       penalty: t.penalty_points || 0,
+      is_present: !!t.is_present,
       github_verified: !!t.github_verified,
       documentation_verified: !!t.documentation_verified,
       scores: {} 
@@ -850,6 +960,7 @@ export default function AdminPage() {
         'Team Name': entry.name,
         'GitHub Verified': entry.github_verified ? 'Yes' : 'No',
         'Documentation Verified': entry.documentation_verified ? 'Yes' : 'No',
+        'Attendance': entry.is_present ? 'PRESENT' : 'AB',
       }
       
       let sum = 0
@@ -1465,6 +1576,13 @@ export default function AdminPage() {
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '36px' }}>
               <h2 style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 700, marginBottom: '32px' }}>Event Protocols</h2>
               <div className="stack" style={{ gap: '28px' }}>
+                <div className="login-field">
+                  <label style={{ color: '#fff', marginBottom: '8px' }}>Protocol Name</label>
+                  <div className="login-input-wrap">
+                    <input type="text" value={rules.name || ''} onChange={(e) => setRules({ ...rules, name: e.target.value })} placeholder="Hackathon Standard" />
+                  </div>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                   <div className="login-field">
                     <label style={{ color: '#fff', marginBottom: '8px' }}>Max Break Time (Minutes)</label>
@@ -1532,52 +1650,124 @@ export default function AdminPage() {
                   className="login-submit" 
                   style={{ width: '100%', marginTop: '16px' }}
                 >
-                  Save & Deploy Protocol
+                  Update Active Protocol
                 </button>
               </div>
             </div>
 
             <div className="login-auth-panel" style={{ background: 'rgba(20, 24, 40, 0.72)', backdropFilter: 'blur(32px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '28px', padding: isMobile ? '18px' : '36px' }}>
-              <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Managed Protocols</h2>
-              <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Configuration</th>
-                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Status</th>
-                      <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'right', padding: '16px' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="sheet-row">
-                      <td style={{ padding: '16px' }}>
-                        <strong style={{ color: '#fff', display: 'block' }}>Hackathon Standard</strong>
-                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>{rules.max_break_time}m limit · {rules.penalty_per_minute}pts / min</span>
-                      </td>
-                      <td style={{ padding: '16px' }}>
-                        <span style={{ 
-                          padding: '4px 10px', 
-                          borderRadius: '8px', 
-                          fontSize: '0.75rem', 
-                          background: rules.is_active ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.05)',
-                          color: rules.is_active ? '#10b981' : 'rgba(255,255,255,0.4)',
-                          fontWeight: 700 
-                        }}>
-                          {rules.is_active ? 'ACTIVE' : 'INACTIVE'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '16px', textAlign: 'right' }}>
-                        <button 
-                          onClick={() => updateRules({...rules, is_active: !rules.is_active}).then(() => { setStatus(rules.is_active ? 'Protocol Deactivated' : 'Protocol Activated'); refresh() }).catch(err => setStatus(`Save failed: ${err.message}`))}
-                          className="login-tab" 
-                          style={{ padding: '6px 14px', fontSize: '0.8rem', background: rules.is_active ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', color: rules.is_active ? '#f87171' : '#60a5fa' }}
-                        >
-                          {rules.is_active ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Managed Protocols</h2>
+                  <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.85rem', marginTop: '6px' }}>Create a new protocol or switch the active one here.</p>
+                </div>
+                <span style={{ padding: '6px 12px', borderRadius: '999px', background: 'rgba(96, 165, 250, 0.12)', color: '#60a5fa', fontSize: '0.8rem', fontWeight: 700 }}>
+                  {protocols.length} total
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gap: '22px' }}>
+                <div style={{ padding: '20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.18)' }}>
+                  <h3 style={{ color: '#fff', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px' }}>Add New Protocol</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                    <div className="login-field">
+                      <label style={{ color: '#fff', marginBottom: '8px' }}>Protocol Name</label>
+                      <div className="login-input-wrap">
+                        <input type="text" value={newProtocol.name} onChange={(e) => setNewProtocol({ ...newProtocol, name: e.target.value })} placeholder="Spring Event Protocol" />
+                      </div>
+                    </div>
+                    <div className="login-field">
+                      <label style={{ color: '#fff', marginBottom: '8px' }}>Protocol Logo URL</label>
+                      <div className="login-input-wrap">
+                        <input type="text" value={newProtocol.event_logo_url} onChange={(e) => setNewProtocol({ ...newProtocol, event_logo_url: e.target.value })} placeholder="https://..." />
+                      </div>
+                    </div>
+                    <div className="login-field">
+                      <label style={{ color: '#fff', marginBottom: '8px' }}>Max Break Time</label>
+                      <div className="login-input-wrap"><input type="number" value={newProtocol.max_break_time} onChange={(e) => setNewProtocol({ ...newProtocol, max_break_time: Number(e.target.value) })} /></div>
+                    </div>
+                    <div className="login-field">
+                      <label style={{ color: '#fff', marginBottom: '8px' }}>Grace Time</label>
+                      <div className="login-input-wrap"><input type="number" value={newProtocol.grace_time} onChange={(e) => setNewProtocol({ ...newProtocol, grace_time: Number(e.target.value) })} /></div>
+                    </div>
+                    <div className="login-field">
+                      <label style={{ color: '#fff', marginBottom: '8px' }}>Penalty / Minute</label>
+                      <div className="login-input-wrap"><input type="number" value={newProtocol.penalty_per_minute} onChange={(e) => setNewProtocol({ ...newProtocol, penalty_per_minute: Number(e.target.value) })} /></div>
+                    </div>
+                    <div className="login-field">
+                      <label style={{ color: '#fff', marginBottom: '8px' }}>Jury Mode</label>
+                      <div className="login-input-wrap">
+                        <select value={newProtocol.jury_mode} onChange={(e) => setNewProtocol({ ...newProtocol, jury_mode: e.target.value })} style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', outline: 'none' }}>
+                          <option value="manual">Manual List</option>
+                          <option value="scan">QR Scan Only</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.85)', marginTop: '16px' }}>
+                    <input type="checkbox" checked={newProtocol.is_active} onChange={(e) => setNewProtocol({ ...newProtocol, is_active: e.target.checked })} />
+                    <span>Activate this protocol immediately</span>
+                  </label>
+                  <button onClick={handleCreateProtocol} className="login-submit" style={{ marginTop: '18px', width: '100%' }}>
+                    Add Protocol
+                  </button>
+                </div>
+
+                <div className="sheet-wrap" style={{ borderRadius: '20px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Protocol</th>
+                        <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', padding: '16px' }}>Status</th>
+                        <th style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', textAlign: 'right', padding: '16px' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {protocols.length === 0 ? (
+                        <tr className="sheet-row">
+                          <td colSpan="3" style={{ padding: '18px', color: 'rgba(255,255,255,0.55)' }}>No protocols found yet.</td>
+                        </tr>
+                      ) : protocols.map((protocol) => (
+                        <tr key={protocol.id} className="sheet-row">
+                          <td style={{ padding: '16px' }}>
+                            <strong style={{ color: '#fff', display: 'block' }}>{protocol.name || 'Untitled Protocol'}</strong>
+                            <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: '0.8rem' }}>
+                              {protocol.max_break_time}m limit · {protocol.penalty_per_minute}pts / min · {protocol.jury_mode === 'scan' ? 'Scan mode' : 'Manual mode'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '16px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              fontSize: '0.75rem',
+                              background: protocol.is_active ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.05)',
+                              color: protocol.is_active ? '#10b981' : 'rgba(255,255,255,0.4)',
+                              fontWeight: 700
+                            }}>
+                              {protocol.is_active ? 'ACTIVE' : 'INACTIVE'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '16px', textAlign: 'right' }}>
+                            <button
+                              onClick={() => handleProtocolToggle(protocol)}
+                              className="login-tab"
+                              style={{ padding: '6px 14px', fontSize: '0.8rem', background: protocol.is_active ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', color: protocol.is_active ? '#f87171' : '#60a5fa', marginRight: '8px' }}
+                            >
+                              {protocol.is_active ? 'Deactivate' : 'Activate'}
+                            </button>
+                            <button
+                              onClick={() => handleProtocolDelete(protocol)}
+                              className="login-tab"
+                              style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171' }}
+                            >
+                              <span className="icon-label" style={{ justifyContent: 'center' }}><Trash2 size={13} /> Delete</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 

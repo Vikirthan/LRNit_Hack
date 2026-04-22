@@ -86,7 +86,7 @@ export default function PublicTicketPage() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page public-ticket-page">
       <div className="login-bg-orb login-bg-orb-1" style={{ width: '600px', height: '600px', background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)' }} />
       <div className="login-bg-orb login-bg-orb-2" style={{ top: '60%', left: '70%', background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)' }} />
       <div className="login-bg-grid" />

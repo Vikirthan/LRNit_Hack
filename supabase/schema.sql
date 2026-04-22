@@ -35,6 +35,48 @@ insert into public.settings (key)
 values ('rules')
 on conflict (key) do nothing;
 
+create table if not exists public.event_protocols (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  max_break_time integer not null default 30,
+  grace_time integer not null default 5,
+  penalty_per_minute integer not null default 1,
+  overdue_email_enabled boolean not null default false,
+  jury_mode text not null default 'manual' check (jury_mode in ('manual', 'scan')),
+  is_active boolean not null default false,
+  event_logo_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists event_protocols_one_active_idx
+  on public.event_protocols (is_active)
+  where is_active;
+
+insert into public.event_protocols (
+  name,
+  max_break_time,
+  grace_time,
+  penalty_per_minute,
+  overdue_email_enabled,
+  jury_mode,
+  is_active,
+  event_logo_url
+)
+select
+  'Hackathon Standard',
+  max_break_time,
+  grace_time,
+  penalty_per_minute,
+  overdue_email_enabled,
+  jury_mode,
+  is_active,
+  event_logo_url
+from public.settings
+where key = 'rules'
+and not exists (select 1 from public.event_protocols)
+on conflict do nothing;
+
 create table if not exists public.teams (
   team_id text primary key,
   team_name text not null,
@@ -189,6 +231,17 @@ as $$
   select exists (
     select 1 from public.profiles p
     where p.id = auth.uid() and p.role in ('admin', 'teacher')
+  );
+$$;
+
+create or replace function public.can_view_admitted_teams()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role = 'teacher'
   );
 $$;
 
@@ -432,6 +485,7 @@ grant execute on function public.list_pending_user_accounts() to anon, authentic
 
 alter table public.profiles enable row level security;
 alter table public.settings enable row level security;
+alter table public.event_protocols enable row level security;
 alter table public.teams enable row level security;
 alter table public.team_emails enable row level security;
 alter table public.break_sessions enable row level security;
@@ -451,15 +505,27 @@ for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "settings volunteer read" on public.settings;
 create policy "settings volunteer read" on public.settings
-for select using (public.is_volunteer());
+for select using (public.is_admin());
 
 drop policy if exists "settings admin write" on public.settings;
 create policy "settings admin write" on public.settings
 for all using (public.is_admin()) with check (public.is_admin());
 
+drop policy if exists "event protocols team read" on public.event_protocols;
+create policy "event protocols team read" on public.event_protocols
+for select using (public.is_admin() or public.is_teacher());
+
+drop policy if exists "event protocols admin write" on public.event_protocols;
+create policy "event protocols admin write" on public.event_protocols
+for all using (public.is_admin()) with check (public.is_admin());
+
 drop policy if exists "teams volunteer read" on public.teams;
 create policy "teams volunteer read" on public.teams
-for select using (public.can_view_teams());
+for select using (
+  public.is_admin()
+  or public.is_volunteer()
+  or (public.can_view_admitted_teams() and is_present = true)
+);
 
 drop policy if exists "teams admin write" on public.teams;
 create policy "teams admin write" on public.teams
@@ -467,7 +533,7 @@ for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "team emails volunteer read" on public.team_emails;
 create policy "team emails volunteer read" on public.team_emails
-for select using (public.can_view_teams());
+for select using (public.is_admin() or public.is_volunteer());
 
 drop policy if exists "team emails admin write" on public.team_emails;
 create policy "team emails admin write" on public.team_emails
@@ -524,7 +590,7 @@ for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "scheduled emails manage" on public.scheduled_emails;
 create policy "scheduled emails manage" on public.scheduled_emails
-for all using (true);
+for all using (public.is_admin()) with check (public.is_admin());
 
 -- ============================================================
 -- 8. SEED DATA (default accounts)
