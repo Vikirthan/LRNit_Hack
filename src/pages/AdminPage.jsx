@@ -403,15 +403,15 @@ export default function AdminPage() {
 </head>
 <body>
   <div style="max-width:550px;margin:40px auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
-    <div style="background-color:#1e293b;padding:32px 24px;text-align:center;">
+    <div style="background-color:#1e293b;padding:40px 24px;text-align:center;">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-        <h2 style="color:#ffffff;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em;">LRN<span style="color:#60a5fa;">it</span></h2>
-        <div style="margin-top:4px;color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;font-weight:600;">Learn · Build · Lead</div>
         ${hasLogo ? `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);width:100%;text-align:center;">
-          <img src="${safeLogoUrl}" alt="Event Logo" style="height:40px;max-width:160px;object-fit:contain;display:inline-block;" />
+        <div style="margin-bottom:20px;text-align:center;">
+          <img src="${safeLogoUrl}" alt="Event Logo" style="height:120px;max-width:280px;object-fit:contain;display:inline-block;" />
         </div>
         ` : ''}
+        <h2 style="color:#ffffff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.02em;">LRN<span style="color:#60a5fa;">it</span></h2>
+        <div style="margin-top:12px;color:rgba(255,255,255,0.5);font-size:12px;text-transform:uppercase;letter-spacing:0.2em;font-weight:700;">Learn · Build · Lead</div>
       </div>
     </div>
     <div style="padding:32px 24px;">
