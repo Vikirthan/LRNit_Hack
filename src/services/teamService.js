@@ -1,5 +1,5 @@
 import { hasSupabaseConfig, supabase } from '../config/supabase'
-import { generateTeamQrToken, sendOverdueAlert, sendTeamQrEmail } from './supabaseFunctions'
+import { generateTeamQrToken, sendAbsentAlert as sendAbsentAlertFunction, sendCustomEmail, sendOverdueAlert, sendTeamQrEmail } from './supabaseFunctions'
 import { ADMIN_VERIFICATION_CRITERIA, TEACHER_CRITERIA } from '../constants/teacherCriteria'
 export { generateTeamQrToken }
 
@@ -342,6 +342,102 @@ function mergeLocalTeam(team) {
   return nextTeam
 }
 
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function buildAbsentAlertHtml(team, ticketUrl) {
+  const teamName = escapeHtml(team?.team_name || 'Team')
+  const room = escapeHtml(team?.room_number || 'TBA')
+  const members = Number(team?.members_count || 0)
+  const safeTicketUrl = escapeHtml(ticketUrl)
+
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:24px;border:1px solid #fde68a;border-radius:14px;background:#fffbeb;">
+      <h2 style="margin:0 0 10px;color:#92400e;">Report to Arena Immediately</h2>
+      <p style="margin:0 0 16px;color:#78350f;">Hello <strong>${teamName}</strong>,</p>
+      <p style="margin:0 0 14px;color:#78350f;line-height:1.6;">Your team is currently marked absent from the arena. Please return as soon as possible for attendance verification.</p>
+      <ul style="margin:0 0 16px;padding-left:20px;color:#78350f;line-height:1.7;">
+        <li>Room: <strong>${room}</strong></li>
+        <li>Members expected: <strong>${members}</strong></li>
+        <li>Keep your team QR ready for verification.</li>
+      </ul>
+      <p style="margin:0 0 18px;">
+        <a href="${safeTicketUrl}" style="display:inline-block;background:#d97706;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">View Team QR Ticket</a>
+      </p>
+      <p style="margin:0;color:#92400e;font-size:13px;">If you are already in the arena, contact the help desk for a status refresh.</p>
+    </div>
+  `
+}
+
+async function sendAbsentAlertFallback(teamId, baseUrl) {
+  if (!supabase) throw new Error('Supabase is not configured yet')
+
+  const { data: team, error: teamError } = await supabase
+    .from('teams')
+    .select('team_id, team_name, room_number, members_count, qr_token, team_emails(email)')
+    .eq('team_id', teamId)
+    .maybeSingle()
+
+  if (teamError) throw teamError
+  if (!team) throw new Error('Team not found')
+
+  const emails = (team.team_emails || []).map((item) => item?.email).filter(Boolean)
+  if (emails.length === 0) {
+    return { success: false, error: 'No emails found for this team', fallback: true }
+  }
+
+  const origin = baseUrl || (typeof window !== 'undefined' ? window.location.origin : '')
+  const ticketUrl = `${origin}/scan?token=${team.qr_token || 'missing'}`
+  const subject = `URGENT: Please Report to Hackathon Arena - Team ${team.team_name}`
+  const htmlContent = buildAbsentAlertHtml(team, ticketUrl)
+  const plainContent = [
+    `Hello ${team.team_name},`,
+    '',
+    'You are currently marked absent from the arena.',
+    `Please report to room ${team.room_number || 'TBA'} immediately with your team QR ticket.`,
+    ticketUrl,
+  ].join('\n')
+
+  let sent = 0
+  let failed = 0
+  let lastError = null
+
+  for (const email of emails) {
+    try {
+      const response = await sendCustomEmail({
+        email,
+        name: team.team_name,
+        subject,
+        content: plainContent,
+        htmlContent,
+        signature: 'Aethera X Organizing Team',
+      })
+
+      if (!response?.success) {
+        throw new Error(response?.error || 'Failed to send absent alert email')
+      }
+      sent++
+    } catch (error) {
+      failed++
+      lastError = error
+    }
+  }
+
+  return {
+    success: failed === 0,
+    fallback: true,
+    sent,
+    failed,
+    error: lastError?.message,
+  }
+}
+
 function normalizeJuryTeam(team = {}) {
   return {
     team_id: team.team_id,
@@ -600,11 +696,18 @@ export async function sendQrEmails(teamId, baseUrl) {
 }
 
 export async function sendAbsentAlert(teamId, baseUrl) {
-  const { data, error } = await supabase.functions.invoke('alert-away-teams', {
-    body: { teamId, baseUrl }
-  })
-  if (error) throw error
-  return data
+  if (!teamId) throw new Error('Team ID is required')
+  try {
+    return await sendAbsentAlertFunction(teamId, baseUrl)
+  } catch (error) {
+    const message = String(error?.message || '')
+    const isInvokeTransportError = message.includes('ATX_0') || message.includes('Failed to send a request to the Edge Function')
+
+    if (!isInvokeTransportError) throw error
+
+    console.warn('alert-away-teams invocation failed. Falling back to send-custom-email path.', error)
+    return sendAbsentAlertFallback(teamId, baseUrl)
+  }
 }
 
 export async function deleteTeamsBySource(sourceFile) {

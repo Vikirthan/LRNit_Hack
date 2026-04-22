@@ -9,7 +9,13 @@ async function invokeFunction(name, payload) {
     body: payload,
   })
 
-  if (error) throw error
+  if (error) {
+    const rawMessage = error?.message || 'Edge function request failed'
+    if (rawMessage.includes('ATX_0')) {
+      throw new Error(`Unable to reach Edge Function "${name}". Verify the function is deployed and Supabase URL/key are correct.`)
+    }
+    throw error
+  }
   return data
 }
 
@@ -23,6 +29,10 @@ export async function sendTeamQrEmail(teamId, baseUrl) {
 
 export async function sendOverdueAlert(teamId, durationMin, overage) {
   return invokeFunction('send-overdue-alert', { teamId, durationMin, overage })
+}
+
+export async function sendAbsentAlert(teamId, baseUrl) {
+  return invokeFunction('alert-away-teams', { teamId, baseUrl })
 }
 
 export async function sendCustomEmail(payload) {

@@ -449,24 +449,46 @@ export default function AdminPage() {
     }
   }
 
-  const onImport = async (e) => {
+  const onImport = async (e, mode = 'replace') => {
     const file = e.target.files?.[0]
     if (!file) return
     setImporting(true)
     setStatus('Parsing file...')
     try {
       const parsed = await parseTeamFile(file)
-      // Attach filename as source_file
-      const teamsWithSource = parsed.map(t => ({ ...t, source_file: file.name }))
-      
-      setStatus(`Importing ${parsed.length} teams from ${file.name}...`)
+      const uniqueById = [...new Map(parsed.filter(t => t.team_id).map(t => [t.team_id, t])).values()]
+
+      if (uniqueById.length === 0) {
+        setStatus('Import file did not contain valid team IDs.')
+        return
+      }
+
+      const existingIds = new Set(teams.map(t => t.team_id))
+      const importPayload = mode === 'append'
+        ? uniqueById.filter(t => !existingIds.has(t.team_id))
+        : uniqueById
+      const skippedCount = mode === 'append' ? (uniqueById.length - importPayload.length) : 0
+
+      if (importPayload.length === 0) {
+        setStatus(`No new teams to append from ${file.name}. ${skippedCount} already exist.`)
+        return
+      }
+
+      const teamsWithSource = importPayload.map(t => ({ ...t, source_file: file.name }))
+
+      setStatus(`${mode === 'append' ? 'Appending' : 'Importing'} ${importPayload.length} teams from ${file.name}...`)
       await upsertTeams(teamsWithSource)
-      setStatus(`Successfully imported ${parsed.length} teams from ${file.name}`)
+      setStatus(
+        mode === 'append'
+          ? `Appended ${importPayload.length} new teams from ${file.name}${skippedCount > 0 ? ` (${skippedCount} skipped - already existed)` : ''}`
+          : `Successfully imported ${importPayload.length} teams from ${file.name}`
+      )
       refresh()
     } catch (err) {
       setStatus(`Import failed: ${err.message}`)
     } finally {
       setImporting(false)
+      e.target.value = ''
     }
   }
 
@@ -1170,8 +1192,15 @@ export default function AdminPage() {
               <h2 style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 700, marginBottom: '24px' }}>Import Teams</h2>
               <div className="login-field">
                 <label style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: '12px' }}>Bulk Team Upload</label>
-                <div className="login-input-wrap" style={{ padding: '8px 16px' }}>
-                  <input type="file" onChange={onImport} accept=".csv,.xlsx,.xls" disabled={importing} style={{ cursor: 'pointer' }} />
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
+                  <label className="login-tab" style={{ flex: 1, textAlign: 'center', cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.6 : 1 }}>
+                    Replace Existing
+                    <input type="file" hidden onChange={(e) => onImport(e, 'replace')} accept=".csv,.xlsx,.xls" disabled={importing} />
+                  </label>
+                  <label className="login-tab" style={{ flex: 1, textAlign: 'center', cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.6 : 1 }}>
+                    Append New
+                    <input type="file" hidden onChange={(e) => onImport(e, 'append')} accept=".csv,.xlsx,.xls" disabled={importing} />
+                  </label>
                 </div>
               </div>
               <div style={{ marginTop: '24px' }}>
