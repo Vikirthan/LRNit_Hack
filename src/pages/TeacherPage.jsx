@@ -54,16 +54,6 @@ export default function TeacherPage() {
   const [filter, setFilter] = useState('')
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
-  const githubMax = useMemo(() => TEACHER_CRITERIA.find((c) => c.key === 'github')?.max || 10, [])
-  const documentationMax = useMemo(() => TEACHER_CRITERIA.find((c) => c.key === 'documentation')?.max || 10, [])
-
-  const applyVerificationLocks = (scores, activeTeam) => {
-    const next = { ...scores }
-    if (activeTeam?.github_verified) next.github = githubMax
-    if (activeTeam?.documentation_verified) next.documentation = documentationMax
-    return next
-  }
-
   const refreshTeams = async () => {
     try {
       const [items, sets] = await Promise.all([getTeams(), getRules()])
@@ -146,10 +136,7 @@ export default function TeacherPage() {
     setRemarks('')
   }, [team.team_id, savedScores])
 
-  const effectiveScoreByCriterion = useMemo(
-    () => applyVerificationLocks(scoreByCriterion, team),
-    [scoreByCriterion, team, githubMax, documentationMax],
-  )
+  const effectiveScoreByCriterion = scoreByCriterion
 
   const total = useMemo(
     () =>
@@ -160,9 +147,6 @@ export default function TeacherPage() {
   const completion = Math.round((total / TEACHER_CRITERIA_TOTAL) * 100)
 
   const updateScore = (key, max, value) => {
-    if ((key === 'github' && team?.github_verified) || (key === 'documentation' && team?.documentation_verified)) {
-      return
-    }
     setScoreByCriterion((prev) => ({ ...prev, [key]: clampScore(value, max) }))
   }
 
@@ -170,7 +154,17 @@ export default function TeacherPage() {
     try {
       setShowSubmitConfirm(false)
       const teacherName = profile?.full_name || profile?.email || 'Teacher'
-      await saveTeacherScore(team.team_id, effectiveScoreByCriterion, remarks, teacherName, profile?.id)
+      await saveTeacherScore(
+        team.team_id,
+        effectiveScoreByCriterion,
+        remarks,
+        teacherName,
+        profile?.id,
+        {
+          githubVerified: !!team?.github_verified,
+          documentationVerified: !!team?.documentation_verified,
+        },
+      )
 
       const payload = {
         team,
@@ -356,7 +350,6 @@ export default function TeacherPage() {
             <div className="criteria-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
               {TEACHER_CRITERIA.map((crit) => {
                 const val = effectiveScoreByCriterion[crit.key]
-                const isLocked = (crit.key === 'github' && team?.github_verified) || (crit.key === 'documentation' && team?.documentation_verified)
                 const fillPercent = Math.round((val / crit.max) * 100)
 
                 return (
@@ -364,8 +357,8 @@ export default function TeacherPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                       <div style={{ maxWidth: '70%' }}>
                         <h3 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>{crit.label}</h3>
-                        <p style={{ fontSize: '0.75rem', color: isLocked ? '#34d399' : 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
-                          {isLocked ? `Locked at full score (${crit.max}/${crit.max})` : `Maximum possible: ${crit.max}`}
+                        <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
+                          {`Maximum possible: ${crit.max}`}
                         </p>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -374,9 +367,8 @@ export default function TeacherPage() {
                            value={val}
                            min="0"
                            max={crit.max}
-                           disabled={isLocked}
                            onChange={(e) => updateScore(crit.key, crit.max, e.target.value)}
-                           style={{ background: isLocked ? 'rgba(52, 211, 153, 0.12)' : 'rgba(96, 165, 250, 0.1)', border: `1px solid ${isLocked ? 'rgba(52, 211, 153, 0.35)' : 'rgba(96, 165, 250, 0.3)'}`, color: isLocked ? '#34d399' : '#60a5fa', width: '55px', padding: '6px 8px', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, textAlign: 'center', outline: 'none', cursor: isLocked ? 'not-allowed' : 'text' }}
+                           style={{ background: 'rgba(96, 165, 250, 0.1)', border: '1px solid rgba(96, 165, 250, 0.3)', color: '#60a5fa', width: '55px', padding: '6px 8px', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, textAlign: 'center', outline: 'none', cursor: 'text' }}
                          />
                          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.85rem' }}>/ {crit.max}</span>
                       </div>
@@ -391,9 +383,8 @@ export default function TeacherPage() {
                       min="0"
                       max={crit.max}
                       value={val}
-                      disabled={isLocked}
                       onChange={(e) => updateScore(crit.key, crit.max, e.target.value)}
-                      style={{ width: '100%', cursor: isLocked ? 'not-allowed' : 'pointer', opacity: isLocked ? 0.6 : 1 }}
+                      style={{ width: '100%', cursor: 'pointer', opacity: 1 }}
                     />
                   </article>
                 )

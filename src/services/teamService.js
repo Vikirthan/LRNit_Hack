@@ -1,5 +1,6 @@
 import { hasSupabaseConfig, supabase } from '../config/supabase'
 import { generateTeamQrToken, sendOverdueAlert, sendTeamQrEmail } from './supabaseFunctions'
+import { ADMIN_VERIFICATION_CRITERIA, TEACHER_CRITERIA } from '../constants/teacherCriteria'
 export { generateTeamQrToken }
 
 const LOCAL_TEAMS_KEY = 'ticketscan-local-teams'
@@ -13,6 +14,78 @@ const defaultRules = {
   jury_mode: 'manual', // 'manual' or 'scan'
   is_active: true,
   event_logo_url: null,
+}
+
+const CRITERIA_MAX_BY_KEY = TEACHER_CRITERIA.reduce((acc, criterion) => {
+  acc[criterion.key] = criterion.max
+  return acc
+}, ADMIN_VERIFICATION_CRITERIA.reduce((acc, criterion) => {
+  acc[criterion.key] = criterion.max
+  return acc
+}, {}))
+
+function applyVerificationToScores(scores = {}, locks = {}) {
+  const next = { ...scores }
+
+  if (locks.github_verified) {
+    next.github = CRITERIA_MAX_BY_KEY.github ?? 10
+  }
+
+  if (locks.documentation_verified) {
+    next.documentation = CRITERIA_MAX_BY_KEY.documentation ?? 10
+  }
+
+  return next
+}
+
+function computeTeacherTotal(scores = {}) {
+  return TEACHER_CRITERIA.reduce((sum, criterion) => {
+    const raw = Number(scores[criterion.key])
+    const bounded = Number.isNaN(raw) ? 0 : Math.max(0, Math.min(criterion.max, raw))
+    return sum + bounded
+  }, 0)
+}
+
+async function reconcileTeamScoreLocks(teamId, locks) {
+  if (!supabase) return
+
+  const { data, error } = await supabase
+    .from('teacher_scores')
+    .select('id, problem_understanding, novelty, technical_depth, social_relevance, presentation, github, documentation')
+    .eq('team_id', teamId)
+
+  if (error) {
+    console.warn('reconcileTeamScoreLocks: failed to fetch teacher scores', error)
+    return
+  }
+
+  const updates = (data ?? [])
+    .map((row) => {
+      const effective = applyVerificationToScores(row, locks)
+      const nextGithub = Number(effective.github) || 0
+      const nextDocumentation = Number(effective.documentation) || 0
+      const nextTotal = computeTeacherTotal(effective)
+
+      if (nextGithub === (Number(row.github) || 0) && nextDocumentation === (Number(row.documentation) || 0) && nextTotal === computeTeacherTotal(row)) {
+        return null
+      }
+
+      return {
+        id: row.id,
+        github: nextGithub,
+        documentation: nextDocumentation,
+        total: nextTotal,
+        updated_at: new Date().toISOString(),
+      }
+    })
+    .filter(Boolean)
+
+  if (updates.length === 0) return
+
+  const { error: updateError } = await supabase.from('teacher_scores').upsert(updates, { onConflict: 'id' })
+  if (updateError) {
+    console.warn('reconcileTeamScoreLocks: failed to persist teacher score updates', updateError)
+  }
 }
 
 function readLocalTeams() {
@@ -461,6 +534,7 @@ export async function setTeamVerificationLocks(teamId, { githubVerified, documen
     github_verified: Boolean(githubVerified),
     documentation_verified: Boolean(documentationVerified),
   }
+  const teamLocks = locks[teamId]
   writeTeamVerificationLocks(locks)
 
   const teams = readLocalTeams()
@@ -489,8 +563,11 @@ export async function setTeamVerificationLocks(teamId, { githubVerified, documen
 
   if (error) {
     console.warn('setTeamVerificationLocks: backend schema may be missing verification columns, using local fallback', error)
+    await reconcileTeamScoreLocks(teamId, teamLocks)
     return { persisted: false }
   }
+
+  await reconcileTeamScoreLocks(teamId, teamLocks)
 
   return { persisted: true }
 }
@@ -541,16 +618,16 @@ export async function getLatestLogs() {
   return data ?? []
 }
 
-export async function saveTeacherScore(teamId, scores, remarks, teacherName, teacherId) {
+export async function saveTeacherScore(teamId, scores, remarks, teacherName, teacherId, lockState = null) {
   if (!supabase) throw new Error('Supabase is not configured yet')
 
   const locks = readTeamVerificationLocks()
-  const teamLock = locks[teamId] || {}
-  const effectiveScores = {
-    ...scores,
-    github: teamLock.github_verified ? 10 : (scores.github || 0),
-    documentation: teamLock.documentation_verified ? 10 : (scores.documentation || 0),
+  const localLock = locks[teamId] || {}
+  const effectiveLocks = {
+    github_verified: Boolean(lockState?.githubVerified ?? localLock.github_verified),
+    documentation_verified: Boolean(lockState?.documentationVerified ?? localLock.documentation_verified),
   }
+  const effectiveScores = applyVerificationToScores(scores, effectiveLocks)
 
   const payload = {
     team_id: teamId,
@@ -565,7 +642,7 @@ export async function saveTeacherScore(teamId, scores, remarks, teacherName, tea
     presentation: effectiveScores.presentation || 0,
     github: effectiveScores.github || 0,
     documentation: effectiveScores.documentation || 0,
-    total: Object.values(effectiveScores).reduce((sum, val) => sum + (Number(val) || 0), 0),
+    total: computeTeacherTotal(effectiveScores),
     remarks: remarks || '',
     updated_at: new Date().toISOString(),
   }

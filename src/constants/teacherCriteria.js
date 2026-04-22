@@ -4,8 +4,15 @@ export const TEACHER_CRITERIA = [
   { key: 'technical_depth', label: 'Technical Depth & Feasibility', max: 25 },
   { key: 'social_relevance', label: 'Social relevance & impact', max: 15 },
   { key: 'presentation', label: 'Presentation and Communication', max: 15 },
+]
+
+export const TEACHER_CRITERIA_TOTAL = TEACHER_CRITERIA.reduce((sum, item) => sum + item.max, 0)
+
+export const ADMIN_VERIFICATION_CRITERIA = [
   { key: 'github', label: 'GitHub', max: 10 },
   { key: 'documentation', label: 'Documentation', max: 10 },
 ]
 
-export const TEACHER_CRITERIA_TOTAL = TEACHER_CRITERIA.reduce((sum, item) => sum + item.max, 0)
+export const ADMIN_VERIFICATION_TOTAL = ADMIN_VERIFICATION_CRITERIA.reduce((sum, item) => sum + item.max, 0)
+
+export const GRAND_TOTAL = TEACHER_CRITERIA_TOTAL + ADMIN_VERIFICATION_TOTAL

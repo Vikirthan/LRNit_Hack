@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Bell, CheckCircle2, Download, LoaderCircle, Lock, Mail, Radar, RotateCcw, Search, ShieldCheck, Trash2, Unlock, UserRoundCheck, Wrench, XCircle } from 'lucide-react'
 import OnlineIndicator from '../components/OnlineIndicator'
 import { useAuth } from '../context/AuthContext'
@@ -18,7 +18,7 @@ import {
   subscribeToRules,
   setTeamVerificationLocks
 } from '../services/teamService'
-import { TEACHER_CRITERIA } from '../constants/teacherCriteria'
+import { ADMIN_VERIFICATION_CRITERIA, TEACHER_CRITERIA } from '../constants/teacherCriteria'
 import { parseTeamFile, parseRecipientFile } from '../services/csvService'
 import { sendCustomEmail } from '../services/supabaseFunctions'
 import { supabase } from '../config/supabase'
@@ -64,16 +64,24 @@ export default function AdminPage() {
   const [mailSignature, setMailSignature] = useState('Aethera X Organizing Team')
   const [mailFromEmail, setMailFromEmail] = useState('')
   const [mailFromName, setMailFromName] = useState('')
+  const [mailFontFamily, setMailFontFamily] = useState('Arial')
+  const [mailFontSize, setMailFontSize] = useState('14')
+  const [mailAttachments, setMailAttachments] = useState([])
   const [sendingCustom, setSendingCustom] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduledMails, setScheduledMails] = useState([])
   const [teamFilter, setTeamFilter] = useState('')
+  const mailEditorRef = useRef(null)
   
   // Advanced Mailing States
   const [selectedRecipients, setSelectedRecipients] = useState([])
   const [previewIndex, setPreviewIndex] = useState(0)
   const [deliveryStatus, setDeliveryStatus] = useState({}) // { email: { status, error, name } }
   const [showFailedOnly, setShowFailedOnly] = useState(false)
+  
+  // Manual Recipient Entry
+  const [manualRecipientName, setManualRecipientName] = useState('')
+  const [manualRecipientEmail, setManualRecipientEmail] = useState('')
 
   const refresh = async () => {
     try {
@@ -116,12 +124,16 @@ export default function AdminPage() {
     // Load Draft
     const saved = localStorage.getItem('mail_draft')
     if (saved) {
-      const d = JSON.parse(saved)
-      setMailSubject(d.subject || '')
-      setMailContent(d.content || '')
-      setMailSignature(d.signature || 'Aethera X Organizing Team')
-      setMailFromName(d.fromName || '')
-      setMailFromEmail(d.fromEmail || '')
+      try {
+        const d = JSON.parse(saved)
+        setMailSubject(d.subject || '')
+        setMailContent(d.content || '')
+        setMailSignature(d.signature || 'Aethera X Organizing Team')
+        setMailFromName(d.fromName || '')
+        setMailFromEmail(d.fromEmail || '')
+      } catch {
+        localStorage.removeItem('mail_draft')
+      }
     }
 
     return () => {
@@ -153,6 +165,13 @@ export default function AdminPage() {
     }))
   }, [mailSubject, mailContent, mailSignature, mailFromName, mailFromEmail])
 
+  useEffect(() => {
+    if (!mailEditorRef.current) return
+    if (mailEditorRef.current.innerHTML !== mailContent) {
+      mailEditorRef.current.innerHTML = mailContent || ''
+    }
+  }, [mailContent])
+
   // Helpers for dynamic mailing
   const getDynamicContent = (text, recipient) => {
     if (!text) return ''
@@ -173,14 +192,94 @@ export default function AdminPage() {
 
   const withBreaks = (value = '') => escapeHtml(value).replace(/\n/g, '<br/>')
 
+  const sanitizeRichHtml = (value = '') => {
+    if (!value) return ''
+    if (typeof window === 'undefined' || typeof DOMParser === 'undefined') return withBreaks(value)
+
+    const doc = new DOMParser().parseFromString(`<div>${value}</div>`, 'text/html')
+    const root = doc.body.firstElementChild
+    if (!root) return ''
+
+    const allowedTags = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'P', 'DIV', 'SPAN', 'UL', 'OL', 'LI'])
+    const allowedStyles = new Set(['font-family', 'font-size', 'font-style', 'font-weight', 'text-decoration'])
+    const safeStyleValue = /^[\w\s,'"\-().%]+$/
+
+    const sanitizeNode = (node) => {
+      if (node.nodeType === 1) {
+        const el = node
+        const tag = el.tagName.toUpperCase()
+
+        if (!allowedTags.has(tag)) {
+          const parent = el.parentNode
+          if (!parent) return
+          while (el.firstChild) parent.insertBefore(el.firstChild, el)
+          parent.removeChild(el)
+          return
+        }
+
+        for (const attr of Array.from(el.attributes)) {
+          if (attr.name !== 'style') el.removeAttribute(attr.name)
+        }
+
+        if (el.hasAttribute('style')) {
+          const inline = []
+          for (const prop of allowedStyles) {
+            const raw = el.style.getPropertyValue(prop)
+            const clean = raw?.trim()
+            if (clean && safeStyleValue.test(clean)) inline.push(`${prop}:${clean}`)
+          }
+          if (inline.length > 0) el.setAttribute('style', inline.join(';'))
+          else el.removeAttribute('style')
+        }
+      }
+
+      for (const child of Array.from(node.childNodes)) sanitizeNode(child)
+    }
+
+    for (const child of Array.from(root.childNodes)) sanitizeNode(child)
+    return root.innerHTML
+  }
+
+  const htmlToPlainText = (value = '') => {
+    if (!value) return ''
+    if (typeof document === 'undefined') return value.replace(/<[^>]+>/g, ' ')
+    const div = document.createElement('div')
+    div.innerHTML = value
+    return (div.innerText || div.textContent || '').trim()
+  }
+
+  const focusMailEditor = () => {
+    if (mailEditorRef.current) mailEditorRef.current.focus()
+  }
+
+  const applyMailCommand = (command, value = null) => {
+    if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return
+    focusMailEditor()
+    document.execCommand('styleWithCSS', false, true)
+    document.execCommand(command, false, value)
+    setMailContent(mailEditorRef.current?.innerHTML || '')
+  }
+
+  const applyMailFontSize = (sizePx) => {
+    if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return
+    focusMailEditor()
+    document.execCommand('fontSize', false, '7')
+    const editor = mailEditorRef.current
+    if (editor) {
+      editor.querySelectorAll('font[size="7"]').forEach((el) => {
+        el.removeAttribute('size')
+        el.style.fontSize = `${sizePx}px`
+      })
+    }
+    setMailContent(editor?.innerHTML || '')
+  }
+
   const buildEmailHtml = ({ recipient, subject, content, signature, fromName, eventLogoUrl }) => {
     const safeSubject = escapeHtml(subject || 'Update from Event Team')
     const safeName = escapeHtml(recipient?.name || 'Participant')
-    const safeContent = withBreaks(content || '')
+    const safeContent = sanitizeRichHtml(content || '')
     const safeSignature = withBreaks(signature || `Best Regards,\n${fromName || 'LRNit Team'}`)
-    const safeLogoUrl = eventLogoUrl ? escapeHtml(eventLogoUrl) : ''
-    const safeFooterLogoUrl = escapeHtml(`${window.location.origin}/icons.svg`)
-    const safeFooterBrandLogoUrl = safeLogoUrl || safeFooterLogoUrl
+    const safeLogoUrl = eventLogoUrl ? 'cid:event-logo' : ''
 
     return `
 <!DOCTYPE html>
@@ -197,7 +296,13 @@ export default function AdminPage() {
   <div style="max-width:550px;margin:40px auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
     <div style="background-color:#1e293b;padding:32px 24px;text-align:center;">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-        <h2 style="color:#ffffff;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em;">LRN<span style="color:#60a5fa;">it</span> - <span style="color:rgba(255,255,255,0.75);font-size:16px;font-weight:700;">Learn.Build.Lead</span></h2>
+        <h2 style="color:#ffffff;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em;">LRN<span style="color:#60a5fa;">it</span></h2>
+        <div style="margin-top:4px;color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;font-weight:600;">Learn · Build · Lead</div>
+        ${eventLogoUrl ? `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);width:100%;">
+          <img src="cid:event-logo" alt="Event Logo" style="height:40px;max-width:160px;object-fit:contain;" />
+        </div>
+        ` : ''}
       </div>
     </div>
     <div style="padding:32px 24px;">
@@ -209,16 +314,31 @@ export default function AdminPage() {
         ${safeLogoUrl ? `<img src="${safeLogoUrl}" alt="Signature Logo" style="height:32px;margin-top:12px;opacity:0.8;" />` : ''}
       </div>
     </div>
-    <div style="background-color:#f8fafc;padding:32px 24px;border-top:1px solid #f1f5f9;text-align:center;">
-      <div style="margin-bottom:12px;">
-        <img src="${safeFooterBrandLogoUrl}" alt="LRNit Logo" style="height:48px;max-width:120px;object-fit:contain;margin:0 auto 16px auto;display:block;" />
-        <strong style="color:#1e293b;font-size:14px;">LRNit Mailing Platform</strong>
+    <div style="background-color:#f8fafc;padding:24px;border-top:1px solid #f1f5f9;text-align:center;">
+      <div style="color:#64748b;font-size:13px;">
+        <strong style="color:#1e293b;">LRNit Mailing Platform</strong>
+        <div style="color:#94a3b8;font-size:11px;margin-top:8px;">© 2026 LRNit. All rights reserved.</div>
       </div>
-      <div style="color:#94a3b8;font-size:10px;margin-top:24px;border-top:1px solid #f1f5f9;padding-top:16px;">© 2026 LRNit. All rights reserved.</div>
     </div>
   </div>
 </body>
 </html>`
+  }
+
+  const getPreviewHtml = () => {
+    try {
+      return buildEmailHtml({
+        recipient: recipients[previewIndex],
+        subject: getDynamicContent(mailSubject, recipients[previewIndex]),
+        content: getDynamicContent(mailContent, recipients[previewIndex]),
+        signature: mailSignature,
+        fromName: mailFromName,
+        eventLogoUrl: rules.event_logo_url,
+      })
+    } catch (err) {
+      console.error('Preview render failed:', err)
+      return '<html><body style="font-family:Arial,sans-serif;padding:16px;">Preview unavailable. Please refresh the page.</body></html>'
+    }
   }
 
   const onImport = async (e) => {
@@ -382,8 +502,6 @@ export default function AdminPage() {
       setToast({ visible: true, message: `Delete failed: ${err.message}`, type: 'error' })
     }
   }
-  <Toast message={toast.message} type={toast.type} visible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} />
-
   const onDeleteBySource = async (sourceFile) => {
     if (!window.confirm(`Delete ALL teams imported from "${sourceFile}"? This cannot be undone.`)) return
     try {
@@ -451,6 +569,11 @@ export default function AdminPage() {
       return
     }
 
+    if (scheduledAt && mailAttachments.length > 0) {
+      alert('Attachments are currently supported for Send Now only. Clear schedule time to continue.')
+      return
+    }
+
     if (scheduledAt) {
       const schDate = new Date(scheduledAt)
       if (schDate < new Date()) {
@@ -503,10 +626,11 @@ export default function AdminPage() {
                   email: r.email,
                   name: r.name,
                   subject: getDynamicContent(mailSubject, r),
-                  content: getDynamicContent(mailContent, r),
+                  content: htmlToPlainText(getDynamicContent(mailContent, r)),
                   signature: mailSignature,
                   fromEmail: mailFromEmail,
                   fromName: mailFromName,
+                  attachments: mailAttachments,
                   eventLogoUrl: rules.event_logo_url,
                   htmlContent: buildEmailHtml({
                     recipient: r,
@@ -552,7 +676,79 @@ export default function AdminPage() {
   }
 
   const insertEmoji = (emoji) => {
-    setMailContent(prev => prev + emoji)
+    if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+      focusMailEditor()
+      document.execCommand('insertText', false, emoji)
+      setMailContent(mailEditorRef.current?.innerHTML || '')
+      return
+    }
+    setMailContent(prev => `${prev}${emoji}`)
+  }
+
+  const mimeTypeFromName = (name) => {
+    const lower = name.toLowerCase()
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+    if (lower.endsWith('.png')) return 'image/png'
+    if (lower.endsWith('.pdf')) return 'application/pdf'
+    if (lower.endsWith('.doc')) return 'application/msword'
+    if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    if (lower.endsWith('.xls')) return 'application/vnd.ms-excel'
+    if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    return 'application/octet-stream'
+  }
+
+  const onAttachmentPick = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    const allowed = new Set([
+      'image/jpeg',
+      'image/png',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ])
+    const maxBytes = 10 * 1024 * 1024
+    const toBase64 = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result || '')
+        const base64 = result.includes(',') ? result.split(',')[1] : result
+        resolve(base64)
+      }
+      reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
+      reader.readAsDataURL(file)
+    })
+
+    try {
+      const nextAttachments = []
+      for (const file of files) {
+        if (!allowed.has(file.type)) {
+          alert(`Unsupported file type: ${file.name}`)
+          continue
+        }
+        if (file.size > maxBytes) {
+          alert(`${file.name} is larger than 10MB.`)
+          continue
+        }
+        const content = await toBase64(file)
+        nextAttachments.push({ name: file.name, content, contentType: mimeTypeFromName(file.name) })
+      }
+
+      if (nextAttachments.length > 0) {
+        setMailAttachments(prev => {
+          const existing = new Set(prev.map(a => a.name))
+          const unique = nextAttachments.filter(a => !existing.has(a.name))
+          return [...prev, ...unique]
+        })
+      }
+    } catch (err) {
+      alert(`Attachment processing failed: ${err.message}`)
+    } finally {
+      e.target.value = ''
+    }
   }
 
   const downloadMailingTemplate = () => {
@@ -565,6 +761,24 @@ export default function AdminPage() {
     XLSX.utils.book_append_sheet(wb, ws, "Template")
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
     saveAs(new Blob([wbout], { type: "application/octet-stream" }), "Mailing_Template.xlsx")
+  }
+
+  const addManualRecipient = () => {
+    if (!manualRecipientEmail || !manualRecipientName) {
+      alert('Please enter both name and email')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualRecipientEmail)) {
+      alert('Invalid email address')
+      return
+    }
+    if (recipients.some(r => r.email === manualRecipientEmail)) {
+      alert('This email already exists in the list')
+      return
+    }
+    setRecipients(prev => [...prev, { name: manualRecipientName, email: manualRecipientEmail }])
+    setManualRecipientName('')
+    setManualRecipientEmail('')
   }
 
   const exportToExcel = () => {
@@ -586,24 +800,27 @@ export default function AdminPage() {
     saveAs(fileData, `TicketScan_MasterTeams_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
-  const githubMax = TEACHER_CRITERIA.find(c => c.key === 'github')?.max || 10
-  const documentationMax = TEACHER_CRITERIA.find(c => c.key === 'documentation')?.max || 10
+  const githubMax = ADMIN_VERIFICATION_CRITERIA.find(c => c.key === 'github')?.max || 10
+  const documentationMax = ADMIN_VERIFICATION_CRITERIA.find(c => c.key === 'documentation')?.max || 10
+
+  const getAdminVerificationBonus = (team) => {
+    let bonus = 0
+    if (team?.github_verified) bonus += githubMax
+    if (team?.documentation_verified) bonus += documentationMax
+    return bonus
+  }
 
   const getAdjustedTeacherTotal = (score, team) => {
     if (!score) return 0
 
-    // Recompute from individual criteria instead of persisted total.
-    // This avoids stale totals and guarantees GitHub + Documentation scoring is included.
-    return TEACHER_CRITERIA.reduce((sum, criterion) => {
+    const teacherTotal = TEACHER_CRITERIA.reduce((sum, criterion) => {
       const key = criterion.key
-      let value = Number(score[key]) || 0
-
-      if (key === 'github' && team?.github_verified) value = githubMax
-      if (key === 'documentation' && team?.documentation_verified) value = documentationMax
-
+      const value = Number(score[key]) || 0
       const bounded = Math.max(0, Math.min(criterion.max, value))
       return sum + bounded
     }, 0)
+
+    return teacherTotal + getAdminVerificationBonus(team)
   }
 
   const exportScoresToExcel = () => {
@@ -1441,6 +1658,38 @@ export default function AdminPage() {
                   <button onClick={downloadMailingTemplate} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '10px', borderRadius: '12px', fontSize: '0.75rem', cursor: 'pointer', marginTop: '4px' }}>
                     <span className="icon-label" style={{ justifyContent: 'center' }}><Download size={14} /> Download Sample Template</span>
                   </button>
+
+                  {/* Manual Recipient Entry */}
+                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: '8px', fontWeight: 600 }}>or Add Manually</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <input 
+                        type="text"
+                        placeholder="Full Name"
+                        value={manualRecipientName}
+                        onChange={e => setManualRecipientName(e.target.value)}
+                        onKeyPress={e => e.key === 'Enter' && addManualRecipient()}
+                        className="login-input"
+                        style={{ fontSize: '0.8rem', padding: '8px', background: 'rgba(255,255,255,0.06)', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.12)' }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input 
+                          type="email"
+                          placeholder="Email"
+                          value={manualRecipientEmail}
+                          onChange={e => setManualRecipientEmail(e.target.value)}
+                          onKeyPress={e => e.key === 'Enter' && addManualRecipient()}
+                          className="login-input"
+                          style={{ flex: 1, fontSize: '0.8rem', padding: '8px', background: 'rgba(255,255,255,0.06)', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.12)' }}
+                        />
+                        <button 
+                          onClick={addManualRecipient}
+                          style={{ background: '#10b981', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, minWidth: '50px' }}>
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {recipients.length > 0 ? (
@@ -1552,30 +1801,71 @@ export default function AdminPage() {
                     <div style={{ display: 'flex', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px', flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', gap: '4px' }}>
                         {['B', 'I', 'U'].map(btn => (
-                           <button key={btn} style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', fontWeight: btn === 'B' ? 800 : 400, fontStyle: btn === 'I' ? 'italic' : 'normal', textDecoration: btn === 'U' ? 'underline' : 'none', cursor: 'pointer' }}>{btn}</button>
+                           <button
+                            key={btn}
+                            type="button"
+                            onClick={() => {
+                              if (btn === 'B') applyMailCommand('bold')
+                              if (btn === 'I') applyMailCommand('italic')
+                              if (btn === 'U') applyMailCommand('underline')
+                            }}
+                            style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', fontWeight: btn === 'B' ? 800 : 400, fontStyle: btn === 'I' ? 'italic' : 'normal', textDecoration: btn === 'U' ? 'underline' : 'none', cursor: 'pointer' }}
+                           >
+                            {btn}
+                           </button>
                         ))}
                       </div>
                       <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                      <select
+                        value={mailFontFamily}
+                        onChange={(e) => {
+                          setMailFontFamily(e.target.value)
+                          applyMailCommand('fontName', e.target.value)
+                        }}
+                        style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: 'none', fontSize: '0.75rem', borderRadius: '4px', padding: '0 6px', minHeight: '28px' }}
+                      >
+                        <option value="Arial">Arial</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Georgia">Georgia</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                        <option value="Trebuchet MS">Trebuchet MS</option>
+                      </select>
                       <div style={{ display: 'flex', gap: '4px' }}>
                         {['Congrats', 'Update', 'Important', 'Location'].map(token => (
                           <button key={token} onClick={() => insertEmoji(` ${token} `)} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', fontSize: '0.72rem', color: '#cbd5e1', borderRadius: '999px', padding: '4px 8px' }}>{token}</button>
                         ))}
                       </div>
                       <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
-                      <select style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: 'none', fontSize: '0.75rem', borderRadius: '4px', padding: '0 4px' }}>
-                        <option>12pt</option>
-                        <option>14pt</option>
-                        <option>16pt</option>
+                      <select
+                        value={mailFontSize}
+                        onChange={(e) => {
+                          setMailFontSize(e.target.value)
+                          applyMailFontSize(Number(e.target.value))
+                        }}
+                        style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: 'none', fontSize: '0.75rem', borderRadius: '4px', padding: '0 6px', minHeight: '28px' }}
+                      >
+                        <option value="12">12pt</option>
+                        <option value="14">14pt</option>
+                        <option value="16">16pt</option>
+                        <option value="18">18pt</option>
                       </select>
                     </div>
 
-                    <textarea 
-                      className="login-input" 
-                      placeholder="Write your main content here... Use {{name}} to personalize." 
-                      value={mailContent}
-                      onChange={e => setMailContent(e.target.value)}
-                      style={{ width: '100%', minHeight: '300px', resize: 'vertical', padding: '12px', lineHeight: '1.6', background: 'transparent', border: 'none', color: '#fff', outline: 'none' }}
-                    />
+                    <div style={{ position: 'relative', minHeight: '300px' }}>
+                      {!mailContent && (
+                        <div style={{ position: 'absolute', top: '12px', left: '12px', color: 'rgba(255,255,255,0.35)', fontSize: '0.9rem', pointerEvents: 'none' }}>
+                          {'Write your main content here... Use {{name}} to personalize.'}
+                        </div>
+                      )}
+                      <div
+                        ref={mailEditorRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onInput={(e) => setMailContent(e.currentTarget.innerHTML)}
+                        className="login-input"
+                        style={{ width: '100%', minHeight: '300px', resize: 'vertical', padding: '12px', lineHeight: '1.6', background: 'transparent', border: 'none', color: '#fff', outline: 'none', whiteSpace: 'pre-wrap' }}
+                      />
+                    </div>
                   </div>
 
                   {/* Regards / Signature Editor */}
@@ -1637,6 +1927,24 @@ export default function AdminPage() {
                         />
                       </div>
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Attachments (jpg, png, pdf, doc, docx, xls, xlsx)</label>
+                    <label className="login-tab active" style={{ display: 'inline-block', width: 'fit-content', cursor: 'pointer', padding: '8px 12px', fontSize: '0.78rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                      Add Attachments
+                      <input type="file" hidden multiple accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx" onChange={onAttachmentPick} />
+                    </label>
+                    {mailAttachments.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {mailAttachments.map((file) => (
+                          <div key={file.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '999px', padding: '6px 10px', color: '#cbd5e1', fontSize: '0.75rem' }}>
+                            <span>{file.name}</span>
+                            <button type="button" onClick={() => setMailAttachments(prev => prev.filter(a => a.name !== file.name))} style={{ border: 'none', background: 'transparent', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem', lineHeight: 1 }}>x</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {/* Failure Status Banner */}
                   {Object.values(deliveryStatus).some(s => s.status === 'failed') && (
@@ -1717,14 +2025,7 @@ export default function AdminPage() {
                     <iframe
                       title="Email preview"
                       style={{ width: '100%', minHeight: isMobile ? '480px' : '640px', border: 'none', borderRadius: '12px', background: '#fff' }}
-                      srcDoc={buildEmailHtml({
-                        recipient: recipients[previewIndex],
-                        subject: getDynamicContent(mailSubject, recipients[previewIndex]),
-                        content: getDynamicContent(mailContent, recipients[previewIndex]),
-                        signature: mailSignature,
-                        fromName: mailFromName,
-                        eventLogoUrl: rules.event_logo_url,
-                      })}
+                      srcDoc={getPreviewHtml()}
                     />
                   </div>
                </div>
@@ -1734,6 +2035,7 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+        <Toast message={toast.message} type={toast.type} visible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} />
       </main>
     </div>
   )
