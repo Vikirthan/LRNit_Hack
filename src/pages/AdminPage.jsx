@@ -193,6 +193,58 @@ export default function AdminPage() {
     }
   }
 
+  const processDueScheduledBlast = async (blast) => {
+    const recipients = Array.isArray(blast?.recipients) ? blast.recipients : []
+    if (!blast?.id || recipients.length === 0) {
+      if (blast?.id) {
+        await supabase.from('scheduled_emails').update({ status: 'failed' }).eq('id', blast.id)
+      }
+      return
+    }
+
+    let success = 0
+    let fail = 0
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i]
+      if (!recipient?.email) {
+        fail++
+        continue
+      }
+
+      try {
+        await sendCustomEmail({
+          email: recipient.email,
+          name: recipient.name,
+          subject: getDynamicContent(blast.subject, recipient),
+          content: htmlToPlainText(getDynamicContent(blast.content, recipient)),
+          signature: blast.signature,
+          fromEmail: blast.from_email,
+          fromName: blast.from_name,
+          eventLogoUrl: blast.event_logo_url || rules.event_logo_url,
+          htmlContent: buildEmailHtml({
+            recipient,
+            subject: getDynamicContent(blast.subject, recipient),
+            content: getDynamicContent(blast.content, recipient),
+            signature: blast.signature,
+            fromName: blast.from_name,
+            eventLogoUrl: blast.event_logo_url || rules.event_logo_url,
+          }),
+        })
+        success++
+      } catch (err) {
+        fail++
+        console.error(`Scheduled blast send failed for ${recipient.email}:`, err)
+      }
+    }
+
+    await supabase
+      .from('scheduled_emails')
+      .update({ status: success > 0 ? 'sent' : 'failed' })
+      .eq('id', blast.id)
+
+    setStatus(`Processed scheduled blast \"${blast.subject}\". Success: ${success}, Failed: ${fail}`)
+  }
+
   const refresh = async () => {
     try {
       const [t, s, p, r, a, l, sch] = await Promise.allSettled([
@@ -216,7 +268,24 @@ export default function AdminPage() {
       }
       if (a.status === 'fulfilled') setAccounts(a.value)
       if (l.status === 'fulfilled') setLogs(l.value)
-      if (sch.status === 'fulfilled' && sch.value?.data) setScheduledMails(sch.value.data)
+      if (sch.status === 'fulfilled' && sch.value?.data) {
+        setScheduledMails(sch.value.data)
+
+        const now = new Date()
+        const duePending = sch.value.data.filter((item) => item?.status === 'pending' && new Date(item.scheduled_at) <= now)
+        if (duePending.length > 0) {
+          setStatus(`Processing ${duePending.length} overdue scheduled blast(s)...`)
+          for (let i = 0; i < duePending.length; i++) {
+            await processDueScheduledBlast(duePending[i])
+          }
+
+          const { data: refreshedScheduled } = await supabase
+            .from('scheduled_emails')
+            .select('*')
+            .order('scheduled_at', { ascending: true })
+          if (refreshedScheduled) setScheduledMails(refreshedScheduled)
+        }
+      }
     } catch (err) {
       console.error('Refresh error:', err)
     }
@@ -404,15 +473,15 @@ export default function AdminPage() {
 <body>
   <div style="max-width:550px;margin:40px auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
     <div style="background-color:#1e293b;padding:40px 24px;text-align:center;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
-        <tr>
-          <td align="center" style="padding:0;">
-            ${hasLogo ? `<img src="${safeLogoUrl}" alt="Event Logo" style="height:120px;max-width:280px;width:auto;display:block;margin:0 auto 18px auto;border:0;outline:none;text-decoration:none;" />` : ''}
-            <h2 style="color:#ffffff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.02em;line-height:1.1;">LRN<span style="color:#60a5fa;">it</span></h2>
-            <div style="margin-top:12px;color:rgba(255,255,255,0.55);font-size:12px;text-transform:uppercase;letter-spacing:0.2em;font-weight:700;line-height:1.2;">Learn · Build · Lead</div>
-          </td>
-        </tr>
-      </table>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        ${hasLogo ? `
+        <div style="margin-bottom:20px;text-align:center;">
+          <img src="${safeLogoUrl}" alt="Event Logo" style="height:120px;max-width:280px;object-fit:contain;display:inline-block;" />
+        </div>
+        ` : ''}
+        <h2 style="color:#ffffff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.02em;">LRN<span style="color:#60a5fa;">it</span></h2>
+        <div style="margin-top:12px;color:rgba(255,255,255,0.5);font-size:12px;text-transform:uppercase;letter-spacing:0.2em;font-weight:700;">Learn · Build · Lead</div>
+      </div>
     </div>
     <div style="padding:32px 24px;">
       <h1 style="color:#111827;font-size:20px;font-weight:700;margin:0 0 20px 0;">${safeSubject}</h1>
@@ -717,8 +786,42 @@ export default function AdminPage() {
       setSendingCustom(true)
       try {
         const { data: { user } } = await supabase.auth.getUser()
-        // Convert local datetime to UTC ISO string for database
         const utcIsoString = new Date(scheduledAt).toISOString()
+
+        let success = 0
+        let fail = 0
+        for (let i = 0; i < targetList.length; i++) {
+          const r = targetList[i]
+          try {
+            setStatus(`⏰ Queueing ${r.name || r.email} (${i + 1}/${targetList.length}) for ${schDate.toLocaleString()}...`)
+            const res = await sendCustomEmail({
+              email: r.email,
+              name: r.name,
+              subject: getDynamicContent(mailSubject, r),
+              content: htmlToPlainText(getDynamicContent(mailContent, r)),
+              signature: mailSignature,
+              fromEmail: mailFromEmail,
+              fromName: mailFromName,
+              eventLogoUrl: rules.event_logo_url,
+              scheduledAt: utcIsoString,
+              htmlContent: buildEmailHtml({
+                recipient: r,
+                subject: getDynamicContent(mailSubject, r),
+                content: getDynamicContent(mailContent, r),
+                signature: mailSignature,
+                fromName: mailFromName,
+                eventLogoUrl: rules.event_logo_url,
+              })
+            })
+
+            if (res?.success) success++
+            else throw new Error(res?.error || 'Unknown error while queueing scheduled email')
+          } catch (err) {
+            fail++
+            console.error(`Scheduled queue error for ${r.email}:`, err)
+          }
+        }
+
         const { error } = await supabase.from('scheduled_emails').insert({
           scheduled_at: utcIsoString,
           subject: mailSubject,
@@ -727,11 +830,13 @@ export default function AdminPage() {
           recipients: targetList,
           from_name: mailFromName,
           from_email: mailFromEmail,
+          event_logo_url: rules.event_logo_url,
           user_id: user?.id,
-          status: 'pending'
+          status: success > 0 ? 'sent' : 'failed'
         })
         if (error) throw error
-        alert('Email blast scheduled successfully!')
+
+        alert(`Scheduled blast queued successfully!\nQueued: ${success}\nFailed: ${fail}`)
         setScheduledAt('')
         refresh()
       } catch (err) {
@@ -1980,7 +2085,11 @@ export default function AdminPage() {
                     <div key={m.id} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                         <span style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>{m.subject}</span>
-                        <button onClick={() => deleteScheduledEmail(m.id)} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
+                        {m.status === 'pending' ? (
+                          <button onClick={() => deleteScheduledEmail(m.id)} style={{ color: '#f87171', background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
+                        ) : (
+                          <span className="muted" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>{m.status}</span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                         <span style={{ color: '#60a5fa' }}>{new Date(m.scheduled_at).toLocaleString()}</span>
