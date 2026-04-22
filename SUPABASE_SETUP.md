@@ -144,6 +144,41 @@ Already included in schema.sql. Policies default to:
 2. Create new function: `send_qr_emails`
 3. Deploy when needed for email alerts
 
+### Brevo Webhook (Email Open/Click/Delivery Insights)
+This project now includes:
+- Edge Function: `brevo-webhook`
+- Migration: `supabase/migrations/20260423_add_email_events_webhook.sql`
+
+Setup steps:
+1. Run the new migration in Supabase SQL Editor (or via your migration pipeline).
+2. In Supabase project settings, add secret:
+   - Key: `BREVO_WEBHOOK_SECRET`
+   - Value: a strong random string
+3. Deploy Edge Function:
+   ```bash
+   supabase functions deploy brevo-webhook
+   ```
+4. Use webhook URL in Brevo Transactional Webhooks:
+   ```
+   https://<your-project-ref>.supabase.co/functions/v1/brevo-webhook?token=<BREVO_WEBHOOK_SECRET>
+   ```
+5. In Brevo webhook event selection, enable at least:
+   - `delivered`
+   - `opened`
+   - `clicked`
+   - `hard_bounce`
+   - `soft_bounce`
+   - `blocked`
+   - `spam`
+
+Verification query:
+```sql
+select event_type, recipient_email, subject, event_time
+from public.email_events
+order by event_time desc
+limit 50;
+```
+
 ### Buckets (If Adding File Storage Later)
 1. Click **"Storage"** → **"New bucket"**
 2. Name: `qr-codes` (if saving QR as images)
