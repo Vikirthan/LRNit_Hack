@@ -66,8 +66,9 @@ serve(async (req) => {
 
     // 2. Send via Brevo (SMTP API v3)
     const inlineAttachments: any[] = [];
+    let logoEmbedSuccess = false;
 
-    if (eventLogoUrl) {
+    if (eventLogoUrl && typeof eventLogoUrl === "string" && eventLogoUrl.trim().length > 0) {
       try {
         const logo = await base64FromUrl(eventLogoUrl);
         inlineAttachments.push({
@@ -76,9 +77,14 @@ serve(async (req) => {
           contentType: logo.contentType,
           contentId: "event-logo",
         });
+        logoEmbedSuccess = true;
       } catch (logoError) {
         console.warn("Logo embed skipped:", logoError.message);
       }
+    }
+    
+    if (!logoEmbedSuccess && htmlContent && htmlContent.includes("cid:event-logo")) {
+      console.warn("Logo embed failed but htmlContent references cid:event-logo. Email may have broken images.");
     }
 
     const payload: any = {

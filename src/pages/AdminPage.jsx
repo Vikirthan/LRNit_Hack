@@ -387,7 +387,7 @@ export default function AdminPage() {
     const safeName = escapeHtml(recipient?.name || 'Participant')
     const safeContent = sanitizeRichHtml(content || '')
     const safeSignature = withBreaks(signature || `Best Regards,\n${fromName || 'LRNit Team'}`)
-    const safeLogoUrl = eventLogoUrl ? 'cid:event-logo' : ''
+    const hasLogo = eventLogoUrl && eventLogoUrl.trim().length > 0
 
     return `
 <!DOCTYPE html>
@@ -406,7 +406,7 @@ export default function AdminPage() {
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
         <h2 style="color:#ffffff;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em;">LRN<span style="color:#60a5fa;">it</span></h2>
         <div style="margin-top:4px;color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;font-weight:600;">Learn · Build · Lead</div>
-        ${eventLogoUrl ? `
+        ${hasLogo ? `
         <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);width:100%;">
           <img src="cid:event-logo" alt="Event Logo" style="height:40px;max-width:160px;object-fit:contain;" />
         </div>
@@ -419,7 +419,7 @@ export default function AdminPage() {
       <div style="color:#4b5563;font-size:14.5px;line-height:1.6;margin:0 0 32px 0;white-space:normal;">${safeContent || 'Start writing your message in the composer to see the live preview here...'}</div>
       <div style="margin-top:32px;border-top:1px solid #f3f4f6;padding-top:24px;">
         <div style="color:#4b5563;font-size:14.5px;line-height:1.6;white-space:normal;">${safeSignature}</div>
-        ${safeLogoUrl ? `<img src="${safeLogoUrl}" alt="Signature Logo" style="height:32px;margin-top:12px;opacity:0.8;" />` : ''}
+        ${hasLogo ? `<img src="cid:event-logo" alt="Signature Logo" style="height:32px;margin-top:12px;opacity:0.8;" />` : ''}
       </div>
     </div>
     <div style="background-color:#f8fafc;padding:24px;border-top:1px solid #f1f5f9;text-align:center;">
