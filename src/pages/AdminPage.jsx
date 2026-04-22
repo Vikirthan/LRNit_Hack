@@ -830,7 +830,6 @@ export default function AdminPage() {
           recipients: targetList,
           from_name: mailFromName,
           from_email: mailFromEmail,
-          event_logo_url: rules.event_logo_url,
           user_id: user?.id,
           status: success > 0 ? 'sent' : 'failed'
         })
