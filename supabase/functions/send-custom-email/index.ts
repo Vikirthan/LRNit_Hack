@@ -50,14 +50,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const stripBrokenLogoReferences = (html: string): string => {
-  // Remove image tags that reference cid:event-logo, including their container divs
-  let result = html;
-  result = result.replace(/<div[^>]*>[\s\n]*<img[^>]*src="cid:event-logo"[^>]*>[\s\n]*<\/div>/gi, "");
-  result = result.replace(/<img[^>]*src="cid:event-logo"[^>]*>/gi, "");
-  return result;
-};
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { 
@@ -74,7 +66,6 @@ serve(async (req) => {
 
     // 2. Send via Brevo (SMTP API v3)
     const inlineAttachments: any[] = [];
-    let logoEmbedSuccess = false;
 
     if (eventLogoUrl && typeof eventLogoUrl === "string" && eventLogoUrl.trim().length > 0) {
       try {
@@ -85,17 +76,9 @@ serve(async (req) => {
           contentType: logo.contentType,
           contentId: "event-logo",
         });
-        logoEmbedSuccess = true;
       } catch (logoError) {
         console.warn("Logo embed skipped:", logoError.message);
       }
-    }
-    
-    // Strip broken logo references if embed failed
-    let finalHtmlContent = htmlContent;
-    if (!logoEmbedSuccess && finalHtmlContent && finalHtmlContent.includes("cid:event-logo")) {
-      console.warn("Logo embed failed. Removing broken cid:event-logo references from HTML.");
-      finalHtmlContent = stripBrokenLogoReferences(finalHtmlContent);
     }
 
     const payload: any = {
@@ -103,8 +86,7 @@ serve(async (req) => {
       sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email, name }],
       subject: subject || "Update from Event Team",
-      htmlContent: finalHtmlContent || `
-        <!DOCTYPE html>
+      htmlContent: htmlContent || `
         <html>
         <head>
           <meta name="color-scheme" content="light dark">
@@ -128,8 +110,8 @@ serve(async (req) => {
 
                 <!-- Optional Event Logo -->
                  ${eventLogoUrl ? `
-                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); width: 100%;">
-                   <img src="cid:event-logo" alt="Event Logo" style="height: 40px; max-width: 180px; object-fit: contain;" />
+                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); width: 100%; text-align: center;">
+                   <img src="${eventLogoUrl}" alt="Event Logo" style="height: 40px; max-width: 180px; object-fit: contain; display: inline-block;" />
                  </div>
                  ` : ''}
               </div>
@@ -150,7 +132,7 @@ serve(async (req) => {
                   ${signature ? signature.replace(/\n/g, '<br/>') : `Best Regards,<br/>${fromName || 'LRNit Team'}`}
                 </div>
                 ${eventLogoUrl ? `
-                  <img src="cid:event-logo" alt="Signature Logo" style="height: 32px; margin-top: 12px; opacity: 0.8;" />
+                  <img src="${eventLogoUrl}" alt="Signature Logo" style="height: 32px; margin-top: 12px; opacity: 0.8; display: inline-block;" />
                 ` : ''}
               </div>
             </div>
