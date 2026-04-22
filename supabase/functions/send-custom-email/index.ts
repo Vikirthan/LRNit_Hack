@@ -50,6 +50,14 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const stripBrokenLogoReferences = (html: string): string => {
+  // Remove image tags that reference cid:event-logo, including their container divs
+  let result = html;
+  result = result.replace(/<div[^>]*>[\s\n]*<img[^>]*src="cid:event-logo"[^>]*>[\s\n]*<\/div>/gi, "");
+  result = result.replace(/<img[^>]*src="cid:event-logo"[^>]*>/gi, "");
+  return result;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { 
@@ -83,8 +91,11 @@ serve(async (req) => {
       }
     }
     
-    if (!logoEmbedSuccess && htmlContent && htmlContent.includes("cid:event-logo")) {
-      console.warn("Logo embed failed but htmlContent references cid:event-logo. Email may have broken images.");
+    // Strip broken logo references if embed failed
+    let finalHtmlContent = htmlContent;
+    if (!logoEmbedSuccess && finalHtmlContent && finalHtmlContent.includes("cid:event-logo")) {
+      console.warn("Logo embed failed. Removing broken cid:event-logo references from HTML.");
+      finalHtmlContent = stripBrokenLogoReferences(finalHtmlContent);
     }
 
     const payload: any = {
@@ -92,7 +103,7 @@ serve(async (req) => {
       sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email, name }],
       subject: subject || "Update from Event Team",
-      htmlContent: htmlContent || `
+      htmlContent: finalHtmlContent || `
         <!DOCTYPE html>
         <html>
         <head>
