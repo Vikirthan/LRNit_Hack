@@ -65,21 +65,6 @@ serve(async (req) => {
     if (!email) throw new Error("Recipient email is required");
 
     // 2. Send via Brevo (SMTP API v3)
-    const inlineAttachments: any[] = [];
-
-    if (eventLogoUrl && typeof eventLogoUrl === "string" && eventLogoUrl.trim().length > 0) {
-      try {
-        const logo = await base64FromUrl(eventLogoUrl);
-        inlineAttachments.push({
-          name: "event-logo",
-          content: logo.content,
-          contentType: logo.contentType,
-          contentId: "event-logo",
-        });
-      } catch (logoError) {
-        console.warn("Logo embed skipped:", logoError.message);
-      }
-    }
 
     const payload: any = {
       // Always use authenticated sender identity to improve SPF/DKIM/DMARC alignment.
@@ -182,8 +167,8 @@ serve(async (req) => {
           }))
       : [];
 
-    if (inlineAttachments.length > 0 || fileAttachments.length > 0) {
-      payload.attachment = [...inlineAttachments, ...fileAttachments];
+    if (fileAttachments.length > 0) {
+      payload.attachment = fileAttachments;
     }
 
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {

@@ -1841,7 +1841,20 @@ export default function AdminPage() {
                           {!isApproved && (
                             <button onClick={() => handleApprove(acc.id)} className="login-tab active" style={{ padding: '6px 14px', fontSize: '0.8rem', marginRight: '8px' }}>Approve</button>
                           )}
-                          <button onClick={() => handleReject(acc.id)} className="login-tab" style={{ padding: '6px 14px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>Revoke</button>
+                          <button
+                            onClick={() => handleReject(acc.id)}
+                            className="login-tab"
+                            style={{ padding: '6px 14px', fontSize: '0.8rem', marginRight: '8px', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}
+                          >
+                            {isApproved ? 'Revoke' : 'Reject'}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(acc.id)}
+                            className="login-tab"
+                            style={{ padding: '6px 14px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     )
